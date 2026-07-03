@@ -1,0 +1,8 @@
+{
+  "name": "BillHive",
+  "description": "A modern, professional invoicing and billing software platform for managing customers, invoices, products, and E-Way bills with lightning speed.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
