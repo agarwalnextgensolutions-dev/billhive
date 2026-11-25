@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Customer, INDIAN_STATES } from '../types';
+import { Customer, INDIAN_STATES, AppUser } from '../types';
 import {
   Search,
   Phone,
@@ -14,22 +14,49 @@ import {
   Landmark,
   User,
   CheckCircle,
+  RotateCcw,
+  Lock,
 } from 'lucide-react';
 import { HiveIcon } from './HiveIcon';
+import {
+  isUserAdmin,
+  canUserUpdate,
+  canUserDelete,
+  canUserExport,
+  canUserViewCustomerContact,
+  canUserViewCustomerBank,
+} from '../utils/userHelper';
 
 interface CurrentCustomersProps {
   customers: Customer[];
+  deletedCustomers?: Customer[];
+  currentUser?: AppUser | null;
   onAddCustomerClick: () => void;
   onEditCustomer: (customer: Customer) => void;
   onDeleteCustomer: (id: string) => void;
+  onRestoreCustomer?: (id: string) => void;
+  onPermanentDeleteCustomer?: (id: string) => void;
 }
 
 export function CurrentCustomers({
   customers,
+  deletedCustomers = [],
+  currentUser = null,
   onAddCustomerClick,
   onEditCustomer,
   onDeleteCustomer,
+  onRestoreCustomer,
+  onPermanentDeleteCustomer,
 }: CurrentCustomersProps) {
+  // Access control
+  const isAdmin = isUserAdmin(currentUser);
+  const canUpdate = canUserUpdate(currentUser, 'customers');
+  const canDelete = canUserDelete(currentUser, 'customers');
+  const canExport = canUserExport(currentUser, 'customers');
+  const canViewContact = canUserViewCustomerContact(currentUser);
+  const canViewBank = canUserViewCustomerBank(currentUser);
+
+  const [viewDeleted, setViewDeleted] = useState(false);
   // Filter states
   const [searchName, setSearchName] = useState('');
   const [searchNumber, setSearchNumber] = useState('');
@@ -130,24 +157,57 @@ export function CurrentCustomers({
           <h1 className="text-2xl font-bold text-[#0f172a] tracking-tight">Active Customer Directory</h1>
           <p className="text-sm text-[#64748b]">View profile information, tax details, and SPOC contact lines.</p>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            id="btn-export-customers"
-            onClick={handleExport}
-            disabled={isExporting}
-            className="inline-flex items-center justify-center px-4 py-2 border border-[#e2e8f0] text-sm font-medium rounded-lg text-[#64748b] bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#3b82f6]/20 transition-all cursor-pointer shadow-sm disabled:opacity-50"
-          >
-            <FileSpreadsheet className="w-4 h-4 mr-2 text-emerald-600" />
-            {isExporting ? 'Exporting...' : 'Export'}
-          </button>
-          <button
-            id="btn-add-customer-top"
-            onClick={onAddCustomerClick}
-            className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-[#3b82f6] hover:bg-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#3b82f6]/20 transition-all cursor-pointer shadow-sm"
-          >
-            <UserPlus className="w-4 h-4 mr-1.5" />
-            Add Customer
-          </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {isAdmin && (
+            <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
+              <button
+                type="button"
+                onClick={() => setViewDeleted(false)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  !viewDeleted
+                    ? 'bg-white text-slate-800 shadow-xs'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Active ({customers.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewDeleted(true)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  viewDeleted
+                    ? 'bg-rose-600 text-white shadow-xs'
+                    : 'text-rose-600 hover:bg-rose-50'
+                }`}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Deleted ({deletedCustomers.length})
+              </button>
+            </div>
+          )}
+
+          {canExport && !viewDeleted && (
+            <button
+              id="btn-export-customers"
+              onClick={handleExport}
+              disabled={isExporting}
+              className="inline-flex items-center justify-center px-4 py-2 border border-[#e2e8f0] text-sm font-medium rounded-lg text-[#64748b] bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#3b82f6]/20 transition-all cursor-pointer shadow-sm disabled:opacity-50"
+            >
+              <FileSpreadsheet className="w-4 h-4 mr-2 text-emerald-600" />
+              {isExporting ? 'Exporting...' : 'Export'}
+            </button>
+          )}
+
+          {canUpdate && !viewDeleted && (
+            <button
+              id="btn-add-customer-top"
+              onClick={onAddCustomerClick}
+              className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-[#3b82f6] hover:bg-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#3b82f6]/20 transition-all cursor-pointer shadow-sm"
+            >
+              <UserPlus className="w-4 h-4 mr-1.5" />
+              Add Customer
+            </button>
+          )}
         </div>
       </div>
 
@@ -158,7 +218,131 @@ export function CurrentCustomers({
         </div>
       )}
 
-      {/* Filter panel */}
+      {viewDeleted ? (
+        <div className="bg-white rounded-xl border border-rose-200 shadow-sm overflow-hidden">
+          <div className="p-3 sm:p-4 bg-rose-50/70 border-b border-rose-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-rose-900 font-bold text-xs sm:text-sm">
+              <Trash2 className="w-4 h-4 text-rose-600 flex-shrink-0" />
+              <span>Deleted Customers Archive (Administrator Access Only)</span>
+            </div>
+            <span className="text-xs font-semibold text-rose-700 bg-rose-100 px-2.5 py-0.5 rounded-full border border-rose-200">
+              {deletedCustomers.length} soft-deleted customer(s)
+            </span>
+          </div>
+
+          {/* Mobile Deleted Customers Card List */}
+          <div className="block md:hidden p-3 space-y-3">
+            {deletedCustomers.length === 0 ? (
+              <div className="py-8 text-center text-slate-400 text-xs">
+                No deleted customers currently in recycle bin.
+              </div>
+            ) : (
+              deletedCustomers.map((cust) => (
+                <div key={cust.id} className="p-3.5 rounded-xl border border-rose-200 bg-rose-50/20 space-y-2.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="font-bold text-slate-900 text-sm">{cust.companyName}</p>
+                      <span className="font-mono text-[11px] text-slate-500">{cust.gstin || 'N/A'}</span>
+                    </div>
+                    {cust.state && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-700">
+                        {cust.state}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-slate-500 font-mono">
+                    Deleted:{' '}
+                    {cust.bankDetails?._deleted?.deletedAt
+                      ? new Date(cust.bankDetails._deleted.deletedAt).toLocaleDateString()
+                      : 'Unknown'}
+                  </div>
+                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-rose-100">
+                    <button
+                      type="button"
+                      onClick={() => onRestoreCustomer?.(cust.id)}
+                      className="px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-semibold hover:bg-emerald-100 flex items-center gap-1 cursor-pointer"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" /> Restore
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (confirm(`Permanently delete customer ${cust.companyName}? This CANNOT be undone.`)) {
+                          onPermanentDeleteCustomer?.(cust.id);
+                        }
+                      }}
+                      className="px-2.5 py-1 bg-rose-50 text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold hover:bg-rose-100 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" /> Delete
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Desktop Deleted Customers Table */}
+          <div className="hidden md:block overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-100 text-left text-xs">
+              <thead className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider">
+                <tr>
+                  <th className="px-6 py-3.5 border-b border-slate-200">Company Name</th>
+                  <th className="px-6 py-3.5 border-b border-slate-200">GSTIN</th>
+                  <th className="px-6 py-3.5 border-b border-slate-200">State</th>
+                  <th className="px-6 py-3.5 border-b border-slate-200">Deletion Details</th>
+                  <th className="px-6 py-3.5 border-b border-slate-200 text-right">Admin Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-slate-700">
+                {deletedCustomers.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-6 py-12 text-center text-slate-400">
+                      No deleted customers currently in recycle bin.
+                    </td>
+                  </tr>
+                ) : (
+                  deletedCustomers.map((cust) => (
+                    <tr key={cust.id} className="hover:bg-slate-50/50">
+                      <td className="px-6 py-3.5 font-bold text-slate-900">{cust.companyName}</td>
+                      <td className="px-6 py-3.5 font-mono text-slate-600">{cust.gstin || 'N/A'}</td>
+                      <td className="px-6 py-3.5 text-slate-600">{cust.state || 'N/A'}</td>
+                      <td className="px-6 py-3.5 text-slate-500 text-[11px]">
+                        {cust.bankDetails?._deleted?.deletedAt
+                          ? `${new Date(cust.bankDetails._deleted.deletedAt).toLocaleString()} (by ${cust.bankDetails._deleted.deletedBy})`
+                          : 'Soft-deleted'}
+                      </td>
+                      <td className="px-6 py-3.5 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => onRestoreCustomer?.(cust.id)}
+                            className="px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-semibold hover:bg-emerald-100 flex items-center gap-1 cursor-pointer"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" /> Restore
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (confirm(`Permanently delete customer ${cust.companyName}? This CANNOT be undone.`)) {
+                                onPermanentDeleteCustomer?.(cust.id);
+                              }
+                            }}
+                            className="px-2.5 py-1 bg-rose-50 text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold hover:bg-rose-100 flex items-center gap-1 cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" /> Delete Permanently
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Filter panel */}
       <div className="bg-white p-4 rounded-lg border border-[#e2e8f0] shadow-sm space-y-4">
         <h4 className="text-xs font-bold text-[#64748b] uppercase tracking-wider">Search Filters</h4>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -289,8 +473,93 @@ export function CurrentCustomers({
         )}
       </div>
 
-      {/* Directory Table */}
-      <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm overflow-hidden">
+      {/* Mobile Active Customers Card List */}
+      <div className="block md:hidden space-y-3">
+        {filteredCustomers.length === 0 ? (
+          <div className="bg-white p-8 rounded-xl border border-slate-200 text-center text-slate-400">
+            <p className="text-sm font-semibold">No customers registered yet</p>
+            <p className="text-xs mt-1">Add details manually or fetch with GSTIN.</p>
+          </div>
+        ) : (
+          filteredCustomers.map((cust) => (
+            <div key={cust.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-3">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="font-bold text-slate-900 text-sm">{cust.companyName}</div>
+                  <div className="text-xs text-slate-500 line-clamp-1 mt-0.5">{cust.address}</div>
+                </div>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-800 flex-shrink-0">
+                  {cust.state}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                <div>
+                  <span className="text-[10px] text-slate-400 block font-semibold">SPOC</span>
+                  <span className="font-medium text-slate-800 truncate block">
+                    {canViewContact ? (
+                      cust.spocDetails.name || 'N/A'
+                    ) : (
+                      <span className="text-slate-400 italic flex items-center gap-1 text-[11px]">
+                        <Lock className="w-3 h-3" /> Restricted
+                      </span>
+                    )}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 block font-semibold">CONTACT</span>
+                  <span className="font-mono text-slate-800 block text-[11px]">
+                    {canViewContact ? (
+                      cust.spocDetails.mobileNumber ? `+91 ${cust.spocDetails.mobileNumber}` : 'N/A'
+                    ) : (
+                      <span className="text-slate-400 italic">••••••••••</span>
+                    )}
+                  </span>
+                </div>
+                <div className="col-span-2 pt-1 border-t border-slate-200/50">
+                  <span className="text-[10px] text-slate-400 font-semibold mr-1">GSTIN:</span>
+                  <span className="font-mono font-medium text-slate-700 text-[11px]">{cust.gstin}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-1.5 pt-1">
+                <button
+                  onClick={() => setViewingCustomer(cust)}
+                  className="px-2.5 py-1 text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg flex items-center gap-1 cursor-pointer"
+                  title="View Full Profile"
+                >
+                  <Eye className="w-3.5 h-3.5" /> View Profile
+                </button>
+                {canUpdate && (
+                  <button
+                    onClick={() => onEditCustomer(cust)}
+                    className="p-1.5 rounded-lg text-slate-500 hover:text-amber-600 hover:bg-amber-50 cursor-pointer"
+                    title="Edit Profile"
+                  >
+                    <Edit2 className="w-4 h-4" />
+                  </button>
+                )}
+                {canDelete && (
+                  <button
+                    onClick={() => {
+                      if (confirm(`Are you sure you want to delete customer ${cust.companyName}?`)) {
+                        onDeleteCustomer(cust.id);
+                      }
+                    }}
+                    className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                    title="Delete Record"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Desktop Directory Table */}
+      <div className="hidden md:block bg-white rounded-lg border border-[#e2e8f0] shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table id="customer-directory-table" className="min-w-full divide-y divide-[#e2e8f0] text-left">
             <thead className="bg-[#f8fafc] text-[#64748b] text-xs font-semibold uppercase tracking-wider">
@@ -319,10 +588,20 @@ export function CurrentCustomers({
                       <div className="text-xs text-[#64748b] truncate max-w-xs">{cust.address}</div>
                     </td>
                     <td className="px-6 py-4 font-medium text-slate-800 border-b border-[#e2e8f0]/60">
-                      {cust.spocDetails.name || 'N/A'}
+                      {canViewContact ? (
+                        cust.spocDetails.name || 'N/A'
+                      ) : (
+                        <span className="text-slate-400 italic flex items-center gap-1 text-xs">
+                          <Lock className="w-3 h-3 text-slate-400" /> Restricted
+                        </span>
+                      )}
                     </td>
                     <td className="px-6 py-4 font-mono text-[#64748b] border-b border-[#e2e8f0]/60">
-                      {cust.spocDetails.mobileNumber ? `+91 ${cust.spocDetails.mobileNumber}` : 'N/A'}
+                      {canViewContact ? (
+                        cust.spocDetails.mobileNumber ? `+91 ${cust.spocDetails.mobileNumber}` : 'N/A'
+                      ) : (
+                        <span className="text-slate-400 font-mono italic">••••••••••</span>
+                      )}
                     </td>
                     <td className="px-6 py-4 font-mono font-medium text-[#64748b] border-b border-[#e2e8f0]/60">
                       {cust.gstin}
@@ -343,26 +622,30 @@ export function CurrentCustomers({
                       </button>
 
                       {/* Edit Action */}
-                      <button
-                        onClick={() => onEditCustomer(cust)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors cursor-pointer"
-                        title="Edit Customer Profile"
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </button>
+                      {canUpdate && (
+                        <button
+                          onClick={() => onEditCustomer(cust)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors cursor-pointer"
+                          title="Edit Customer Profile"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                      )}
 
                       {/* Delete Action */}
-                      <button
-                        onClick={() => {
-                          if (confirm(`Are you sure you want to delete customer ${cust.companyName}?`)) {
-                            onDeleteCustomer(cust.id);
-                          }
-                        }}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                        title="Delete Record"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {canDelete && (
+                        <button
+                          onClick={() => {
+                            if (confirm(`Are you sure you want to delete customer ${cust.companyName}?`)) {
+                              onDeleteCustomer(cust.id);
+                            }
+                          }}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                          title="Delete Record"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -371,6 +654,8 @@ export function CurrentCustomers({
           </table>
         </div>
       </div>
+      </>
+      )}
 
       {/* Customer Full Profile Modal */}
       {viewingCustomer && (
@@ -442,7 +727,12 @@ export function CurrentCustomers({
                   <User className="w-4 h-4 text-blue-500" />
                   Points of Contact (POC)
                 </p>
-                {viewingCustomer.pocs && viewingCustomer.pocs.length > 0 ? (
+                {!canViewContact ? (
+                  <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-500 flex items-center gap-2">
+                    <Lock className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                    <span>Contact person (SPOC/POC) details are restricted for your user account.</span>
+                  </div>
+                ) : viewingCustomer.pocs && viewingCustomer.pocs.length > 0 ? (
                   <div className="space-y-3 max-h-48 overflow-y-auto pr-1">
                     {viewingCustomer.pocs.map((poc, idx) => (
                       <div key={idx} className="p-3 bg-slate-50/80 rounded-xl border border-slate-100 text-xs space-y-1.5">
@@ -490,7 +780,12 @@ export function CurrentCustomers({
                   <Landmark className="w-4 h-4 text-emerald-500" />
                   Bank Remittance Profile
                 </p>
-                {viewingCustomer.bankDetails.bankName ? (
+                {!canViewBank ? (
+                  <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-500 flex items-center gap-2">
+                    <Lock className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                    <span>Bank account remittance details are restricted for your user account.</span>
+                  </div>
+                ) : viewingCustomer.bankDetails.bankName ? (
                   <div className="grid grid-cols-2 gap-3 text-xs bg-emerald-50/50 p-3 rounded-xl border border-emerald-100/50">
                     <div>
                       <span className="text-slate-500 block">Bank Name:</span>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Invoice, Customer, Product, InvoiceItem, CustomerAddress } from '../types';
+import { Invoice, Customer, Product, InvoiceItem, CustomerAddress, AppUser } from '../types';
 import { getNextInvoiceNumber } from '../utils/invoiceHelper';
 import { 
   FileText, 
@@ -31,6 +31,7 @@ interface NewInvoiceProps {
   onCancel: () => void;
   editingInvoice?: Invoice | null;
   company: any;
+  currentUser?: AppUser | null;
 }
 
 export function NewInvoice({
@@ -42,6 +43,7 @@ export function NewInvoice({
   onCancel,
   editingInvoice,
   company,
+  currentUser = null,
 }: NewInvoiceProps) {
   // Form Basic details
   const [invoiceNumber, setInvoiceNumber] = useState('');
@@ -373,17 +375,17 @@ export function NewInvoice({
     <div id="new-invoice-container" className="max-w-5xl mx-auto space-y-6">
       
       {/* Title Header */}
-      <div className="flex items-center justify-between border-b border-[#e2e8f0] pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-[#e2e8f0] pb-4">
         <div>
-          <h1 className="text-2xl font-bold text-[#0f172a] tracking-tight">
+          <h1 className="text-xl sm:text-2xl font-bold text-[#0f172a] tracking-tight">
             {editingInvoice ? 'Edit Sales Invoice' : 'Create Sales Invoice'}
           </h1>
-          <p className="text-sm text-[#64748b]">Draft compliant GST Tax Invoices, attach references, specify ship-to details, and item parameters.</p>
+          <p className="text-xs sm:text-sm text-[#64748b]">Draft compliant GST Tax Invoices, attach references, specify ship-to details, and item parameters.</p>
         </div>
         <button
           onClick={onCancel}
           type="button"
-          className="text-sm font-semibold text-[#3b82f6] hover:text-[#2563eb] transition-colors flex items-center cursor-pointer"
+          className="text-xs sm:text-sm font-semibold text-[#3b82f6] hover:text-[#2563eb] transition-colors flex items-center cursor-pointer self-start sm:self-auto"
         >
           <ArrowLeft className="w-4 h-4 mr-1" />
           Cancel & Return
@@ -859,103 +861,96 @@ export function NewInvoice({
             )}
           </div>
 
-          {/* Active Items Table */}
+          {/* Active Items View */}
           <div className="space-y-4">
             {invoiceItems.length > 0 ? (
-              <div className="border border-[#e2e8f0] rounded-xl overflow-x-auto shadow-2xs">
-                <table className="min-w-full divide-y divide-slate-200 text-left text-xs text-slate-600">
-                  <thead className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider">
-                    <tr>
-                      <th className="px-4 py-3">#</th>
-                      <th className="px-4 py-3">Product Description & Specs</th>
-                      <th className="px-4 py-3 w-32">HSN Code</th>
-                      <th className="px-4 py-3 w-24">Qty</th>
-                      <th className="px-4 py-3 w-28">Unit</th>
-                      <th className="px-4 py-3 w-32">Unit Rate (₹)</th>
-                      <th className="px-4 py-3 text-right w-36">Total Value (₹)</th>
-                      <th className="px-4 py-3 text-center w-12"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 bg-white">
-                    {invoiceItems.map((item, idx) => (
-                      <tr key={idx} className="hover:bg-slate-50/40 align-top">
-                        {/* Row Count */}
-                        <td className="px-4 py-4 text-slate-400 font-bold font-mono">
-                          {idx + 1}
-                        </td>
+              <>
+                {/* Mobile Line Items Cards (block md:hidden) */}
+                <div className="block md:hidden space-y-3">
+                  {invoiceItems.map((item, idx) => (
+                    <div key={idx} className="p-4 bg-slate-50/70 border border-slate-200 rounded-xl space-y-3">
+                      <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                        <span className="text-xs font-bold text-slate-500 font-mono">Item #{idx + 1}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveItem(idx)}
+                          className="text-rose-600 hover:text-rose-800 p-1 rounded hover:bg-rose-50 flex items-center gap-1 text-xs font-semibold cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" /> Remove
+                        </button>
+                      </div>
 
-                        {/* Name & Parameters Block */}
-                        <td className="px-4 py-4 space-y-2">
-                          <input
-                            type="text"
-                            required
-                            value={item.name}
-                            onChange={(e) => handleItemPropertyChange(idx, 'name', e.target.value)}
-                            onKeyDown={handleKeyDownEnter}
-                            placeholder="Enter item description..."
-                            className="w-full px-2 py-1.5 border border-slate-200 rounded-md focus:outline-none focus:border-[#3b82f6] text-xs font-semibold text-slate-800"
-                          />
+                      {/* Item Description */}
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 mb-1">Description</label>
+                        <input
+                          type="text"
+                          required
+                          value={item.name}
+                          onChange={(e) => handleItemPropertyChange(idx, 'name', e.target.value)}
+                          placeholder="Item name..."
+                          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 bg-white"
+                        />
+                      </div>
 
-                          {/* Dynamic Custom Parameter Text Boxes */}
-                          {item.parameters && Object.keys(item.parameters).length > 0 && (
-                            <div className="flex flex-wrap gap-2 pt-1">
-                              {Object.keys(item.parameters).map((paramKey) => (
-                                <div key={paramKey} className="flex items-center gap-1.5 bg-slate-50 border border-slate-200/60 rounded-md px-2 py-1">
-                                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{paramKey}:</span>
-                                  <input
-                                    type="text"
-                                    placeholder="Spec"
-                                    value={item.parameters?.[paramKey] || ''}
-                                    onChange={(e) => handleItemParamChange(idx, paramKey, e.target.value)}
-                                    onKeyDown={handleKeyDownEnter}
-                                    className="w-16 px-1.5 py-0.5 border border-slate-200 rounded text-[10px] text-slate-700 font-bold focus:outline-none focus:border-blue-500 font-mono"
-                                  />
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </td>
+                      {/* Specs / Parameters if any */}
+                      {item.parameters && Object.keys(item.parameters).length > 0 && (
+                        <div className="space-y-1.5">
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Specifications</label>
+                          <div className="grid grid-cols-2 gap-2">
+                            {Object.keys(item.parameters).map((paramKey) => (
+                              <div key={paramKey} className="flex items-center gap-1 bg-white border border-slate-200 rounded-md px-2 py-1">
+                                <span className="text-[10px] font-bold text-slate-500">{paramKey}:</span>
+                                <input
+                                  type="text"
+                                  placeholder="Spec"
+                                  value={item.parameters?.[paramKey] || ''}
+                                  onChange={(e) => handleItemParamChange(idx, paramKey, e.target.value)}
+                                  className="w-full text-[11px] font-mono font-bold text-slate-800 focus:outline-none"
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
 
-                        {/* HSN Code */}
-                        <td className="px-4 py-4">
+                      {/* HSN, Qty, Unit, Rate in a 2x2 grid */}
+                      <div className="grid grid-cols-2 gap-3 text-xs">
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 mb-0.5">HSN Code</label>
                           <input
                             type="text"
                             required
                             value={item.hsnCode}
                             onChange={(e) => handleItemPropertyChange(idx, 'hsnCode', e.target.value)}
-                            onKeyDown={handleKeyDownEnter}
-                            placeholder="HSN"
-                            className="w-full px-2 py-1.5 border border-slate-200 rounded-md focus:outline-none focus:border-[#3b82f6] text-xs font-mono font-bold text-slate-800"
+                            className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-mono font-bold text-slate-800 bg-white"
                           />
-                        </td>
-
-                        {/* Quantity */}
-                        <td className="px-4 py-4">
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Unit</label>
+                          <select
+                            value={item.unit}
+                            onChange={(e) => handleItemPropertyChange(idx, 'unit', e.target.value)}
+                            className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 bg-white"
+                          >
+                            <option value="KG">KG</option>
+                            <option value="Nos">Nos</option>
+                            <option value="PCS">PCS</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Quantity</label>
                           <input
                             type="number"
                             min={1}
                             required
                             value={item.quantity || ''}
                             onChange={(e) => handleItemPropertyChange(idx, 'quantity', Math.max(1, parseInt(e.target.value) || 0))}
-                            onKeyDown={handleKeyDownEnter}
-                            className="w-full px-2 py-1.5 border border-slate-200 rounded-md focus:outline-none focus:border-[#3b82f6] text-xs font-mono font-bold text-slate-800"
+                            className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-mono font-bold text-slate-800 bg-white"
                           />
-                        </td>
-
-                        {/* Unit Select Dropdown */}
-                        <td className="px-4 py-4">
-                          <select
-                            value={item.unit}
-                            onChange={(e) => handleItemPropertyChange(idx, 'unit', e.target.value)}
-                            className="w-full px-2 py-1.5 border border-slate-200 rounded-md focus:outline-none focus:border-[#3b82f6] text-xs font-semibold text-slate-800 bg-white"
-                          >
-                            <option value="KG">KG</option>
-                            <option value="Nos">Nos</option>
-                          </select>
-                        </td>
-
-                        {/* Rate */}
-                        <td className="px-4 py-4">
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Rate (₹)</label>
                           <input
                             type="number"
                             min={0}
@@ -963,33 +958,137 @@ export function NewInvoice({
                             required
                             value={item.rate || ''}
                             onChange={(e) => handleItemPropertyChange(idx, 'rate', Math.max(0, parseFloat(e.target.value) || 0))}
-                            onKeyDown={handleKeyDownEnter}
                             placeholder="0.00"
-                            className="w-full px-2 py-1.5 border border-slate-200 rounded-md focus:outline-none focus:border-[#3b82f6] text-xs font-mono font-bold text-slate-800"
+                            className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-mono font-bold text-slate-800 bg-white"
                           />
-                        </td>
+                        </div>
+                      </div>
 
-                        {/* Auto-computed Amount */}
-                        <td className="px-4 py-4 text-right font-mono font-bold text-slate-800 text-sm align-middle">
+                      {/* Line Total */}
+                      <div className="flex items-center justify-between pt-2 border-t border-slate-200 text-xs">
+                        <span className="font-semibold text-slate-500">Item Total:</span>
+                        <span className="font-mono font-bold text-slate-900 text-sm">
                           ₹ {(item.quantity * item.rate).toFixed(2)}
-                        </td>
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
 
-                        {/* Remove Action */}
-                        <td className="px-4 py-4 text-center align-middle">
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveItem(idx)}
-                            className="text-rose-600 hover:text-rose-800 p-1.5 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                            title="Remove Row"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
+                {/* Desktop Line Items Table (hidden md:block) */}
+                <div className="hidden md:block border border-[#e2e8f0] rounded-xl overflow-x-auto shadow-2xs">
+                  <table className="min-w-full divide-y divide-slate-200 text-left text-xs text-slate-600">
+                    <thead className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider">
+                      <tr>
+                        <th className="px-4 py-3">#</th>
+                        <th className="px-4 py-3">Product Description & Specs</th>
+                        <th className="px-4 py-3 w-32">HSN Code</th>
+                        <th className="px-4 py-3 w-24">Qty</th>
+                        <th className="px-4 py-3 w-28">Unit</th>
+                        <th className="px-4 py-3 w-32">Unit Rate (₹)</th>
+                        <th className="px-4 py-3 text-right w-36">Total Value (₹)</th>
+                        <th className="px-4 py-3 text-center w-12"></th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {invoiceItems.map((item, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50/40 align-top">
+                          <td className="px-4 py-4 text-slate-400 font-bold font-mono">
+                            {idx + 1}
+                          </td>
+                          <td className="px-4 py-4 space-y-2">
+                            <input
+                              type="text"
+                              required
+                              value={item.name}
+                              onChange={(e) => handleItemPropertyChange(idx, 'name', e.target.value)}
+                              onKeyDown={handleKeyDownEnter}
+                              placeholder="Enter item description..."
+                              className="w-full px-2 py-1.5 border border-slate-200 rounded-md focus:outline-none focus:border-[#3b82f6] text-xs font-semibold text-slate-800"
+                            />
+                            {item.parameters && Object.keys(item.parameters).length > 0 && (
+                              <div className="flex flex-wrap gap-2 pt-1">
+                                {Object.keys(item.parameters).map((paramKey) => (
+                                  <div key={paramKey} className="flex items-center gap-1.5 bg-slate-50 border border-slate-200/60 rounded-md px-2 py-1">
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{paramKey}:</span>
+                                    <input
+                                      type="text"
+                                      placeholder="Spec"
+                                      value={item.parameters?.[paramKey] || ''}
+                                      onChange={(e) => handleItemParamChange(idx, paramKey, e.target.value)}
+                                      onKeyDown={handleKeyDownEnter}
+                                      className="w-16 px-1.5 py-0.5 border border-slate-200 rounded text-[10px] text-slate-700 font-bold focus:outline-none focus:border-blue-500 font-mono"
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-4 py-4">
+                            <input
+                              type="text"
+                              required
+                              value={item.hsnCode}
+                              onChange={(e) => handleItemPropertyChange(idx, 'hsnCode', e.target.value)}
+                              onKeyDown={handleKeyDownEnter}
+                              placeholder="HSN"
+                              className="w-full px-2 py-1.5 border border-slate-200 rounded-md focus:outline-none focus:border-[#3b82f6] text-xs font-mono font-bold text-slate-800"
+                            />
+                          </td>
+                          <td className="px-4 py-4">
+                            <input
+                              type="number"
+                              min={1}
+                              required
+                              value={item.quantity || ''}
+                              onChange={(e) => handleItemPropertyChange(idx, 'quantity', Math.max(1, parseInt(e.target.value) || 0))}
+                              onKeyDown={handleKeyDownEnter}
+                              className="w-full px-2 py-1.5 border border-slate-200 rounded-md focus:outline-none focus:border-[#3b82f6] text-xs font-mono font-bold text-slate-800"
+                            />
+                          </td>
+                          <td className="px-4 py-4">
+                            <select
+                              value={item.unit}
+                              onChange={(e) => handleItemPropertyChange(idx, 'unit', e.target.value)}
+                              className="w-full px-2 py-1.5 border border-slate-200 rounded-md focus:outline-none focus:border-[#3b82f6] text-xs font-semibold text-slate-800 bg-white"
+                            >
+                              <option value="KG">KG</option>
+                              <option value="Nos">Nos</option>
+                              <option value="PCS">PCS</option>
+                            </select>
+                          </td>
+                          <td className="px-4 py-4">
+                            <input
+                              type="number"
+                              min={0}
+                              step="any"
+                              required
+                              value={item.rate || ''}
+                              onChange={(e) => handleItemPropertyChange(idx, 'rate', Math.max(0, parseFloat(e.target.value) || 0))}
+                              onKeyDown={handleKeyDownEnter}
+                              placeholder="0.00"
+                              className="w-full px-2 py-1.5 border border-slate-200 rounded-md focus:outline-none focus:border-[#3b82f6] text-xs font-mono font-bold text-slate-800"
+                            />
+                          </td>
+                          <td className="px-4 py-4 text-right font-mono font-bold text-slate-800 text-sm align-middle">
+                            ₹ {(item.quantity * item.rate).toFixed(2)}
+                          </td>
+                          <td className="px-4 py-4 text-center align-middle">
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveItem(idx)}
+                              className="text-rose-600 hover:text-rose-800 p-1.5 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                              title="Remove Row"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             ) : (
               <div className="p-8 border border-dashed border-slate-200 rounded-2xl text-center bg-slate-50/30 text-slate-400 space-y-2">
                 <Package className="w-10 h-10 text-slate-300 mx-auto" />
@@ -1045,12 +1144,12 @@ export function NewInvoice({
         </div>
 
         {/* FORM FOOTER ACTION PANEL */}
-        <div className="flex items-center justify-end space-x-3 pt-2">
+        <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-3 pt-2">
           <button
             type="button"
             onClick={onCancel}
             disabled={isGeneratingPdf}
-            className="px-5 py-3 border border-[#e2e8f0] bg-white hover:bg-slate-50 text-[#64748b] font-semibold text-sm rounded-lg cursor-pointer transition-colors disabled:opacity-50"
+            className="w-full sm:w-auto px-5 py-3 border border-[#e2e8f0] bg-white hover:bg-slate-50 text-[#64748b] font-semibold text-sm rounded-lg cursor-pointer transition-colors disabled:opacity-50 text-center"
           >
             Cancel & Return
           </button>
@@ -1058,7 +1157,7 @@ export function NewInvoice({
             type="submit"
             id="btn-invoice-save"
             disabled={isGeneratingPdf}
-            className="px-6 py-3 bg-[#3b82f6] hover:bg-[#2563eb] text-white font-semibold text-sm rounded-lg flex items-center shadow-sm cursor-pointer transition-colors disabled:opacity-75 disabled:cursor-not-allowed"
+            className="w-full sm:w-auto px-6 py-3 bg-[#3b82f6] hover:bg-[#2563eb] text-white font-semibold text-sm rounded-lg flex items-center justify-center shadow-sm cursor-pointer transition-colors disabled:opacity-75 disabled:cursor-not-allowed text-center"
           >
             {isGeneratingPdf ? (
               <>
@@ -1090,6 +1189,7 @@ export function NewInvoice({
               ✕
             </button>
             <AddCustomer 
+              currentUser={currentUser}
               onSaveCustomer={async (newCust) => {
                 const saved = await onAddCustomer(newCust);
                 setSelectedCustomerId(saved.id);

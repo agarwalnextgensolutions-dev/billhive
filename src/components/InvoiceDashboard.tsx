@@ -1,9 +1,15 @@
 import { useState } from 'react';
-import { Invoice, INDIAN_STATES, Customer } from '../types';
+import { Invoice, INDIAN_STATES, Customer, AppUser } from '../types';
 import { HiveIcon } from './HiveIcon';
 import { getCompanyDetails } from '../utils/companyHelper';
 import { generateInvoicePdfBase64 } from '../utils/pdfHelper';
 import { supabase } from '../utils/supabaseClient';
+import {
+  isUserAdmin,
+  canUserUpdate,
+  canUserDelete,
+  canUserExport,
+} from '../utils/userHelper';
 import {
   Search,
   Calendar,
@@ -20,22 +26,32 @@ import {
   TrendingUp,
   AlertCircle,
   CheckCircle,
+  RefreshCw,
+  RotateCcw,
 } from 'lucide-react';
 
 interface InvoiceDashboardProps {
   invoices: Invoice[];
+  deletedInvoices?: Invoice[];
+  currentUser?: AppUser | null;
   onAddInvoiceClick: () => void;
   onEditInvoice: (invoice: Invoice) => void;
   onDeleteInvoice: (id: string) => void;
+  onRestoreInvoice?: (id: string) => void;
+  onPermanentDeleteInvoice?: (id: string) => void;
   company: any;
   customers: Customer[];
 }
 
 export function InvoiceDashboard({
   invoices,
+  deletedInvoices = [],
+  currentUser = null,
   onAddInvoiceClick,
   onEditInvoice,
   onDeleteInvoice,
+  onRestoreInvoice,
+  onPermanentDeleteInvoice,
   company,
   customers,
 }: InvoiceDashboardProps) {
@@ -63,6 +79,13 @@ export function InvoiceDashboard({
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [filterState, setFilterState] = useState('');
+
+  // Access Control & Deleted View
+  const isAdmin = isUserAdmin(currentUser);
+  const canUpdate = canUserUpdate(currentUser, 'invoicing');
+  const canDelete = canUserDelete(currentUser, 'invoicing');
+  const canExport = canUserExport(currentUser, 'invoicing');
+  const [viewDeleted, setViewDeleted] = useState(false);
 
   // UI interaction states
   const [viewingInvoice, setViewingInvoice] = useState<Invoice | null>(null);
@@ -152,8 +175,10 @@ export function InvoiceDashboard({
     return true;
   });
 
-  const ensureInvoicePdfData = async (inv: Invoice): Promise<string> => {
-    if (inv.pdfData) return inv.pdfData;
+  const [isRegenerating, setIsRegenerating] = useState(false);
+
+  const ensureInvoicePdfData = async (inv: Invoice, force = false): Promise<string> => {
+    if (inv.pdfData && !force) return inv.pdfData;
     
     // Compile on the fly
     const customer = customers.find(c => c.companyName === inv.customerName || c.id === inv.customerId);
@@ -172,6 +197,18 @@ export function InvoiceDashboard({
     }
     
     return compiledPdf;
+  };
+
+  const handleRegeneratePdf = async (inv: Invoice) => {
+    setIsRegenerating(true);
+    try {
+      const pdfBase64 = await ensureInvoicePdfData(inv, true);
+      setViewingInvoice({ ...inv, pdfData: pdfBase64 });
+    } catch (err: any) {
+      alert('Failed to regenerate PDF: ' + err.message);
+    } finally {
+      setIsRegenerating(false);
+    }
   };
 
   // Download PDF file
@@ -259,24 +296,57 @@ export function InvoiceDashboard({
           <h1 className="text-2xl font-bold text-[#0f172a] tracking-tight">Sales Invoices</h1>
           <p className="text-sm text-[#64748b]">Track and manage your business accounts receivables.</p>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            id="btn-export-invoices"
-            onClick={handleExport}
-            disabled={isExporting}
-            className="inline-flex items-center justify-center px-4 py-2 border border-[#e2e8f0] text-sm font-medium rounded-lg text-[#64748b] bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#3b82f6]/20 transition-all cursor-pointer shadow-sm disabled:opacity-50"
-          >
-            <FileSpreadsheet className="w-4 h-4 mr-2 text-emerald-600" />
-            {isExporting ? 'Exporting...' : 'Export'}
-          </button>
-          <button
-            id="btn-create-invoice-top"
-            onClick={onAddInvoiceClick}
-            className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-[#3b82f6] hover:bg-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#3b82f6]/20 transition-all cursor-pointer shadow-sm"
-          >
-            <Plus className="w-4 h-4 mr-1.5" />
-            Create Invoice
-          </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {isAdmin && (
+            <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
+              <button
+                type="button"
+                onClick={() => setViewDeleted(false)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  !viewDeleted
+                    ? 'bg-white text-slate-800 shadow-xs'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Active ({invoices.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewDeleted(true)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  viewDeleted
+                    ? 'bg-rose-600 text-white shadow-xs'
+                    : 'text-rose-600 hover:bg-rose-50'
+                }`}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Deleted ({deletedInvoices.length})
+              </button>
+            </div>
+          )}
+
+          {canExport && !viewDeleted && (
+            <button
+              id="btn-export-invoices"
+              onClick={handleExport}
+              disabled={isExporting}
+              className="inline-flex items-center justify-center px-4 py-2 border border-[#e2e8f0] text-sm font-medium rounded-lg text-[#64748b] bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#3b82f6]/20 transition-all cursor-pointer shadow-sm disabled:opacity-50"
+            >
+              <FileSpreadsheet className="w-4 h-4 mr-2 text-emerald-600" />
+              {isExporting ? 'Exporting...' : 'Export'}
+            </button>
+          )}
+
+          {canUpdate && !viewDeleted && (
+            <button
+              id="btn-create-invoice-top"
+              onClick={onAddInvoiceClick}
+              className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-[#3b82f6] hover:bg-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#3b82f6]/20 transition-all cursor-pointer shadow-sm"
+            >
+              <Plus className="w-4 h-4 mr-1.5" />
+              Create Invoice
+            </button>
+          )}
         </div>
       </div>
 
@@ -287,7 +357,129 @@ export function InvoiceDashboard({
         </div>
       )}
 
-      {/* Search and Filters */}
+      {viewDeleted ? (
+        <div className="bg-white rounded-xl border border-rose-200 shadow-sm overflow-hidden">
+          <div className="p-3 sm:p-4 bg-rose-50/70 border-b border-rose-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-rose-900 font-bold text-xs sm:text-sm">
+              <Trash2 className="w-4 h-4 text-rose-600 flex-shrink-0" />
+              <span>Deleted Invoices Archive (Administrator Access Only)</span>
+            </div>
+            <span className="text-xs font-semibold text-rose-700 bg-rose-100 px-2.5 py-0.5 rounded-full border border-rose-200">
+              {deletedInvoices.length} soft-deleted invoice(s)
+            </span>
+          </div>
+
+          {/* Mobile Deleted Invoices Cards */}
+          <div className="block md:hidden p-3 space-y-3">
+            {deletedInvoices.length === 0 ? (
+              <div className="py-8 text-center text-slate-400 text-xs">
+                No deleted invoices currently in recycle bin.
+              </div>
+            ) : (
+              deletedInvoices.map((inv) => (
+                <div key={inv.id} className="p-3.5 rounded-xl border border-rose-200 bg-rose-50/20 space-y-2.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <span className="font-mono font-bold text-slate-900 text-xs">{inv.invoiceNumber}</span>
+                      <p className="font-semibold text-slate-800 text-xs">{inv.customerName}</p>
+                    </div>
+                    <span className="font-mono font-bold text-slate-900 text-xs">₹{inv.amount.toFixed(2)}</span>
+                  </div>
+                  <div className="text-[11px] text-slate-500 font-mono">
+                    Deleted:{' '}
+                    {inv.billingAddress?._deleted?.deletedAt
+                      ? new Date(inv.billingAddress._deleted.deletedAt).toLocaleDateString()
+                      : 'Unknown'}
+                  </div>
+                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-rose-100">
+                    <button
+                      type="button"
+                      onClick={() => onRestoreInvoice?.(inv.id)}
+                      className="px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-semibold hover:bg-emerald-100 flex items-center gap-1 cursor-pointer"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" /> Restore
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (confirm(`Permanently delete invoice ${inv.invoiceNumber}? This CANNOT be undone.`)) {
+                          onPermanentDeleteInvoice?.(inv.id);
+                        }
+                      }}
+                      className="px-2.5 py-1 bg-rose-50 text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold hover:bg-rose-100 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" /> Delete
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Desktop Deleted Invoices Table */}
+          <div className="hidden md:block overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-100 text-left text-xs">
+              <thead className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider">
+                <tr>
+                  <th className="px-6 py-3.5 border-b border-slate-200">Invoice #</th>
+                  <th className="px-6 py-3.5 border-b border-slate-200">Client Name</th>
+                  <th className="px-6 py-3.5 border-b border-slate-200">Amount</th>
+                  <th className="px-6 py-3.5 border-b border-slate-200">Date</th>
+                  <th className="px-6 py-3.5 border-b border-slate-200">Deletion Details</th>
+                  <th className="px-6 py-3.5 border-b border-slate-200 text-right">Admin Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-slate-700">
+                {deletedInvoices.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-12 text-center text-slate-400">
+                      No deleted invoices currently in recycle bin.
+                    </td>
+                  </tr>
+                ) : (
+                  deletedInvoices.map((inv) => (
+                    <tr key={inv.id} className="hover:bg-slate-50/50">
+                      <td className="px-6 py-3.5 font-mono font-bold text-slate-900">{inv.invoiceNumber}</td>
+                      <td className="px-6 py-3.5 font-semibold text-slate-900">{inv.customerName}</td>
+                      <td className="px-6 py-3.5 font-mono font-bold text-slate-900">₹{inv.amount.toFixed(2)}</td>
+                      <td className="px-6 py-3.5 font-mono text-slate-500">{inv.date}</td>
+                      <td className="px-6 py-3.5 text-slate-500 text-[11px]">
+                        {inv.billingAddress?._deleted?.deletedAt
+                          ? `${new Date(inv.billingAddress._deleted.deletedAt).toLocaleString()} (by ${inv.billingAddress._deleted.deletedBy})`
+                          : 'Soft-deleted'}
+                      </td>
+                      <td className="px-6 py-3.5 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => onRestoreInvoice?.(inv.id)}
+                            className="px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-semibold hover:bg-emerald-100 flex items-center gap-1 cursor-pointer"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" /> Restore
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (confirm(`Permanently delete invoice ${inv.invoiceNumber}? This CANNOT be undone.`)) {
+                                onPermanentDeleteInvoice?.(inv.id);
+                              }
+                            }}
+                            className="px-2.5 py-1 bg-rose-50 text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold hover:bg-rose-100 flex items-center gap-1 cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" /> Delete Permanently
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Search and Filters */}
       <div className="bg-white p-4 rounded-lg border border-[#e2e8f0] shadow-sm space-y-4">
         <h4 className="text-xs font-bold text-[#64748b] uppercase tracking-wider">Search Filters</h4>
         <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
@@ -400,13 +592,13 @@ export function InvoiceDashboard({
 
         {/* Filters helper feedback */}
         {(searchName || startDate || endDate || filterState) && (
-          <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs text-slate-500">
-            <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-slate-100 text-xs text-slate-500">
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
               <span>Active filters:</span>
-              {searchName && <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full font-mono">Name: "{searchName}"</span>}
-              {startDate && <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full font-mono">From: {startDate}</span>}
-              {endDate && <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full font-mono">To: {endDate}</span>}
-              {filterState && <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full font-mono">State: {filterState}</span>}
+              {searchName && <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full font-mono text-[11px]">Name: "{searchName}"</span>}
+              {startDate && <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full font-mono text-[11px]">From: {startDate}</span>}
+              {endDate && <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full font-mono text-[11px]">To: {endDate}</span>}
+              {filterState && <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full font-mono text-[11px]">State: {filterState}</span>}
             </div>
             <button
               id="btn-clear-filters"
@@ -416,7 +608,7 @@ export function InvoiceDashboard({
                 setEndDate('');
                 setFilterState('');
               }}
-              className="text-[#3b82f6] hover:text-[#2563eb] font-semibold flex items-center gap-1 cursor-pointer"
+              className="text-[#3b82f6] hover:text-[#2563eb] font-semibold flex items-center gap-1 cursor-pointer self-start sm:self-auto"
             >
               Clear All Filters
             </button>
@@ -424,8 +616,99 @@ export function InvoiceDashboard({
         )}
       </div>
 
-      {/* Invoice Table Grid */}
-      <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm overflow-hidden">
+      {/* Mobile Invoices Card List */}
+      <div className="block md:hidden space-y-3">
+        {filteredInvoices.length === 0 ? (
+          <div className="bg-white p-8 rounded-xl border border-slate-200 text-center text-slate-400">
+            <p className="text-sm font-semibold">No matching invoices found</p>
+            <p className="text-xs mt-1">Try relaxing search filters or dates.</p>
+          </div>
+        ) : (
+          filteredInvoices.map((inv) => (
+            <div key={inv.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-3">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="font-mono font-bold text-blue-600 text-xs sm:text-sm">{inv.invoiceNumber}</div>
+                  <div className="font-semibold text-slate-900 text-sm mt-0.5">{inv.customerName}</div>
+                </div>
+                <div className="text-right flex flex-col items-end">
+                  <span className="font-mono font-bold text-slate-900 text-sm">
+                    ₹ {inv.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-mono mt-0.5">{inv.date}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between text-xs pt-2.5 border-t border-slate-100 flex-wrap gap-2">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-700">
+                    {inv.state}
+                  </span>
+                  {inv.paymentMode && (
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600">
+                      <CreditCard className="w-3 h-3 mr-1" />
+                      {inv.paymentMode}
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => handleOpenViewInvoice(inv)}
+                    className="p-1.5 rounded-lg text-slate-500 hover:text-blue-600 hover:bg-blue-50 cursor-pointer"
+                    title="View PDF"
+                  >
+                    <Eye className="w-4 h-4" />
+                  </button>
+                  {canExport && (
+                    <button
+                      onClick={() => handleShare(inv)}
+                      className="p-1.5 rounded-lg text-slate-500 hover:text-purple-600 hover:bg-purple-50 cursor-pointer"
+                      title="Share"
+                    >
+                      <Share2 className="w-4 h-4" />
+                    </button>
+                  )}
+                  {canExport && (
+                    <button
+                      onClick={() => handleDownload(inv)}
+                      className="p-1.5 rounded-lg text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 cursor-pointer"
+                      title="Download"
+                    >
+                      <Download className="w-4 h-4" />
+                    </button>
+                  )}
+                  {canUpdate && (
+                    <button
+                      onClick={() => onEditInvoice(inv)}
+                      className="p-1.5 rounded-lg text-slate-500 hover:text-amber-600 hover:bg-amber-50 cursor-pointer"
+                      title="Edit"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                  )}
+                  {canDelete && (
+                    <button
+                      onClick={() => {
+                        if (confirm(`Are you sure you want to delete invoice ${inv.invoiceNumber}?`)) {
+                          onDeleteInvoice(inv.id);
+                        }
+                      }}
+                      className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                      title="Delete"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Desktop Invoice Table Grid */}
+      <div className="hidden md:block bg-white rounded-lg border border-[#e2e8f0] shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table id="invoice-dashboard-table" className="min-w-full divide-y divide-[#e2e8f0] text-left">
             <thead className="bg-[#f8fafc] text-[#64748b] text-xs font-semibold uppercase tracking-wider">
@@ -483,44 +766,52 @@ export function InvoiceDashboard({
                       </button>
 
                       {/* Share Action */}
-                      <button
-                        onClick={() => handleShare(inv)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition-colors cursor-pointer"
-                        title="Share Invoice Link"
-                      >
-                        <Share2 className="w-4 h-4" />
-                      </button>
+                      {canExport && (
+                        <button
+                          onClick={() => handleShare(inv)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition-colors cursor-pointer"
+                          title="Share Invoice Link"
+                        >
+                          <Share2 className="w-4 h-4" />
+                        </button>
+                      )}
 
                       {/* Download Action */}
-                      <button
-                        onClick={() => handleDownload(inv)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors cursor-pointer"
-                        title="Download PDF"
-                      >
-                        <Download className="w-4 h-4" />
-                      </button>
+                      {canExport && (
+                        <button
+                          onClick={() => handleDownload(inv)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors cursor-pointer"
+                          title="Download PDF"
+                        >
+                          <Download className="w-4 h-4" />
+                        </button>
+                      )}
 
                       {/* Edit Action */}
-                      <button
-                        onClick={() => onEditInvoice(inv)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors cursor-pointer"
-                        title="Edit Invoice"
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </button>
+                      {canUpdate && (
+                        <button
+                          onClick={() => onEditInvoice(inv)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors cursor-pointer"
+                          title="Edit Invoice"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                      )}
 
                       {/* Delete Action */}
-                      <button
-                        onClick={() => {
-                          if (confirm(`Are you sure you want to delete invoice ${inv.invoiceNumber}?`)) {
-                            onDeleteInvoice(inv.id);
-                          }
-                        }}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                        title="Delete Invoice"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {canDelete && (
+                        <button
+                          onClick={() => {
+                            if (confirm(`Are you sure you want to delete invoice ${inv.invoiceNumber}?`)) {
+                              onDeleteInvoice(inv.id);
+                            }
+                          }}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                          title="Delete Invoice"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -529,22 +820,24 @@ export function InvoiceDashboard({
           </table>
         </div>
       </div>
+      </>
+      )}
 
       {/* View Detailed Invoice Modal */}
       {viewingInvoice && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-xl w-full max-w-4xl overflow-hidden border border-slate-100 flex flex-col h-[90vh]">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4">
+          <div className="bg-white rounded-2xl sm:rounded-3xl shadow-xl w-full max-w-4xl overflow-hidden border border-slate-100 flex flex-col h-[94vh] sm:h-[90vh]">
             {/* Header */}
-            <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <div className="p-1 bg-blue-500 rounded text-white">
+            <div className="px-4 sm:px-6 py-3 sm:py-4 bg-slate-900 text-white flex items-center justify-between">
+              <div className="flex items-center space-x-2 truncate pr-2">
+                <div className="p-1 bg-blue-500 rounded text-white flex-shrink-0">
                   <HiveIcon className="w-4 h-4" />
                 </div>
-                <span className="font-bold text-sm tracking-wide">Invoice PDF Preview - {viewingInvoice.invoiceNumber}</span>
+                <span className="font-bold text-xs sm:text-sm tracking-wide truncate">Invoice - {viewingInvoice.invoiceNumber}</span>
               </div>
               <button
                 onClick={() => setViewingInvoice(null)}
-                className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer flex-shrink-0"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -559,26 +852,38 @@ export function InvoiceDashboard({
                   title="Invoice PDF Preview"
                 />
               ) : (
-                <div className="p-8 text-center space-y-4 bg-white rounded-2xl shadow-sm border border-slate-200">
-                  <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-blue-600 mx-auto animate-pulse"></div>
-                  <p className="text-sm font-semibold text-slate-500">Compiling 3-Page PDF document on the fly...</p>
+                <div className="p-6 sm:p-8 text-center space-y-4 bg-white rounded-2xl shadow-sm border border-slate-200 m-4">
+                  <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-blue-600 mx-auto"></div>
+                  <p className="text-sm font-semibold text-slate-600">Compiling 3-Page PDF document on the fly...</p>
                   <p className="text-xs text-slate-400">Please wait while the recipient, transporter, and supplier copies are generated.</p>
                 </div>
               )}
             </div>
 
             {/* Footer buttons */}
-            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end space-x-2">
+            <div className="px-4 sm:px-6 py-3 sm:py-4 bg-slate-50 border-t border-slate-100 flex flex-wrap items-center justify-end gap-2">
               <button
-                onClick={() => handleDownload(viewingInvoice)}
-                className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-700 transition-colors flex items-center shadow-sm cursor-pointer"
+                type="button"
+                onClick={() => handleRegeneratePdf(viewingInvoice)}
+                disabled={isRegenerating}
+                className="px-3 sm:px-4 py-2 border border-slate-200 bg-white text-slate-700 rounded-xl text-xs sm:text-sm font-semibold hover:bg-slate-50 transition-colors flex items-center shadow-xs cursor-pointer disabled:opacity-50"
+                title="Regenerate PDF with latest company logo & template"
               >
-                <Download className="w-4 h-4 mr-1.5" />
-                Download PDF
+                <RefreshCw className={`w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1.5 ${isRegenerating ? 'animate-spin' : ''}`} />
+                {isRegenerating ? 'Regenerating...' : 'Regenerate'}
               </button>
+              {canExport && (
+                <button
+                  onClick={() => handleDownload(viewingInvoice)}
+                  className="px-3 sm:px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs sm:text-sm font-semibold hover:bg-emerald-700 transition-colors flex items-center shadow-sm cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1.5" />
+                  Download PDF
+                </button>
+              )}
               <button
                 onClick={() => setViewingInvoice(null)}
-                className="px-4 py-2 border border-slate-200 bg-white text-slate-700 rounded-xl text-sm font-semibold hover:bg-slate-50 transition-colors cursor-pointer"
+                className="px-3 sm:px-4 py-2 border border-slate-200 bg-white text-slate-700 rounded-xl text-xs sm:text-sm font-semibold hover:bg-slate-50 transition-colors cursor-pointer"
               >
                 Close
               </button>

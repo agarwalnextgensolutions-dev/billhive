@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { Invoice } from '../types';
-import { Truck, Check, HelpCircle, Save, Plus, ArrowRight, ShieldAlert, FileText } from 'lucide-react';
+import { Invoice, AppUser } from '../types';
+import { Truck, Check, HelpCircle, Save, Plus, ArrowRight, ShieldAlert, FileText, Lock } from 'lucide-react';
+import { canUserUpdate, canUserExport } from '../utils/userHelper';
 
 interface EWayBillProps {
   invoices: Invoice[];
+  currentUser?: AppUser | null;
 }
 
 interface MockEWayBill {
@@ -17,7 +19,8 @@ interface MockEWayBill {
   dateGenerated: string;
 }
 
-export function EWayBill({ invoices }: EWayBillProps) {
+export function EWayBill({ invoices, currentUser = null }: EWayBillProps) {
+  const canUpdate = canUserUpdate(currentUser, 'ewayBill');
   // Mock generated bills list
   const [bills, setBills] = useState<MockEWayBill[]>([
     {
@@ -81,12 +84,12 @@ export function EWayBill({ invoices }: EWayBillProps) {
 
   return (
     <div id="eway-bill-container" className="space-y-6">
-      <div className="border-b border-[#e2e8f0] pb-4">
-        <h1 className="text-2xl font-bold text-[#0f172a] tracking-tight flex items-center gap-2">
-          <Truck className="w-7 h-7 text-[#3b82f6]" />
+      <div className="border-b border-[#e2e8f0] pb-3 sm:pb-4">
+        <h1 className="text-xl sm:text-2xl font-bold text-[#0f172a] tracking-tight flex items-center gap-2">
+          <Truck className="w-6 h-6 sm:w-7 sm:h-7 text-[#3b82f6]" />
           E-Way Bill Compliance
         </h1>
-        <p className="text-sm text-[#64748b]">Generate electronic waybills for heavy cargo movement across state borders.</p>
+        <p className="text-xs sm:text-sm text-[#64748b]">Generate electronic waybills for heavy cargo movement across state borders.</p>
       </div>
 
       {message && (
@@ -105,7 +108,13 @@ export function EWayBill({ invoices }: EWayBillProps) {
           </h3>
           <p className="text-xs text-[#64748b]">Attach standard invoices and declare transporter detail.</p>
 
-          <form onSubmit={handleGenerate} className="space-y-4">
+          {!canUpdate ? (
+            <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg text-slate-500 text-xs flex items-center gap-2">
+              <Lock className="w-4 h-4 text-slate-400 flex-shrink-0" />
+              <span>You do not have permission to issue new E-Way bills. View-only access.</span>
+            </div>
+          ) : (
+            <form onSubmit={handleGenerate} className="space-y-4">
             {/* Invoice Select */}
             <div>
               <label className="block text-xs font-semibold text-slate-500">Select Tax Invoice</label>
@@ -194,6 +203,7 @@ export function EWayBill({ invoices }: EWayBillProps) {
               Generate Official E-Way Bill
             </button>
           </form>
+          )}
         </div>
 
         {/* COMPLIANCE LISTING */}
@@ -210,9 +220,9 @@ export function EWayBill({ invoices }: EWayBillProps) {
 
           <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm overflow-hidden divide-y divide-[#e2e8f0]">
             {bills.map((b) => (
-              <div key={b.ewayBillNo} className="p-5 hover:bg-slate-50/50 transition-all space-y-3">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                  <div className="flex items-center gap-2">
+              <div key={b.ewayBillNo} className="p-4 sm:p-5 hover:bg-slate-50/50 transition-all space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 sm:gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="px-2 py-1 bg-blue-50 text-[#3b82f6] rounded-md text-xs font-bold font-mono">
                       Bill No: {b.ewayBillNo}
                     </span>

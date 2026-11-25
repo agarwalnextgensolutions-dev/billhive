@@ -1,3 +1,11 @@
+export interface SoftDeleteMeta {
+  isDeleted: boolean;
+  deletedAt: string;
+  deletedBy: string;
+  deletedByName?: string;
+  previousStatus?: string;
+}
+
 export interface SPOCDetails {
   name: string;
   email: string;
@@ -9,6 +17,7 @@ export interface BankDetails {
   accountNumber: string;
   branch: string;
   ifscCode: string;
+  _deleted?: SoftDeleteMeta;
 }
 
 export interface Customer {
@@ -21,6 +30,7 @@ export interface Customer {
   spocDetails: SPOCDetails;
   pocs?: SPOCDetails[];
   addresses?: CustomerAddress[];
+  _deleted?: SoftDeleteMeta;
 }
 
 export interface CustomerAddress {
@@ -32,6 +42,7 @@ export interface CustomerAddress {
   city: string;
   state: string;
   stateCode: string;
+  _deleted?: SoftDeleteMeta;
 }
 
 export interface InvoiceItem {
@@ -52,7 +63,7 @@ export interface Invoice {
   amount: number;
   date: string;
   state: string;
-  status: 'Paid' | 'Pending' | 'Cancelled';
+  status: 'Paid' | 'Pending' | 'Cancelled' | 'Deleted';
   paymentMode?: 'Cash' | 'UPI' | 'Net Banking' | 'Card' | string;
   ewayBillNo?: string;
   deliveryNote?: string;
@@ -69,6 +80,7 @@ export interface Invoice {
   taxSgst?: number;
   taxIgst?: number;
   pdfData?: string;
+  _deleted?: SoftDeleteMeta;
 }
 
 export interface Product {
@@ -87,13 +99,16 @@ export interface Product {
     RF: boolean;
     PCD: boolean;
     HD: boolean;
+    _deleted?: SoftDeleteMeta;
   };
   price: number;
   gstRate: number; // e.g. 18 for 18%
   unit: string; // e.g. PCS, BOX, KG
+  _deleted?: SoftDeleteMeta;
 }
 
 export type SidebarTab =
+  | 'admin-panel'
   | 'invoicing-dashboard'
   | 'new-invoice'
   | 'current-customers'
@@ -102,6 +117,43 @@ export type SidebarTab =
   | 'add-product'
   | 'eway-bill'
   | 'company-details';
+
+export interface ModulePermissions {
+  view: boolean;
+  update: boolean; // create and edit
+  delete: boolean; // soft delete
+  export: boolean; // download / export
+}
+
+export interface CustomerModulePermissions extends ModulePermissions {
+  viewContact: boolean;
+  updateContact: boolean;
+  viewBank: boolean;
+  updateBank: boolean;
+}
+
+export interface UserAccesses {
+  invoicing: ModulePermissions;
+  customers: CustomerModulePermissions;
+  product: ModulePermissions;
+  ewayBill: ModulePermissions;
+  companyDetails: ModulePermissions;
+  userManagement: ModulePermissions;
+}
+
+export interface AppUser {
+  id: string;
+  userId: string; // unique identifier (e.g. "Angs")
+  username?: string; // alias for userId
+  name: string;
+  email: string;
+  phone: string;
+  password: string;
+  role: 'admin' | 'user';
+  accesses: UserAccesses;
+  createdAt: string;
+  updatedAt?: string;
+}
 
 export const INDIAN_STATES = [
   'Andhra Pradesh',

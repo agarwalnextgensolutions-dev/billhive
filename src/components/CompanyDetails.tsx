@@ -17,12 +17,14 @@ import {
   X,
   AlertCircle
 } from 'lucide-react';
-import { CompanyAddress, CompanyDetailsData, INDIAN_STATES } from '../types';
+import { CompanyAddress, CompanyDetailsData, INDIAN_STATES, AppUser } from '../types';
 import { supabase } from '../utils/supabaseClient';
+import { canUserUpdate } from '../utils/userHelper';
 
 interface CompanyDetailsProps {
   company: any;
   onSave: (updatedDetails: CompanyDetailsData) => Promise<void>;
+  currentUser?: AppUser | null;
 }
 
 export function mapDbToCompanyDetailsData(c: any): CompanyDetailsData {
@@ -46,7 +48,8 @@ export function mapDbToCompanyDetailsData(c: any): CompanyDetailsData {
   };
 }
 
-export function CompanyDetails({ company, onSave }: CompanyDetailsProps) {
+export function CompanyDetails({ company, onSave, currentUser = null }: CompanyDetailsProps) {
+  const canUpdate = canUserUpdate(currentUser, 'companyDetails');
   const [details, setDetails] = useState<CompanyDetailsData | null>(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -278,8 +281,15 @@ export function CompanyDetails({ company, onSave }: CompanyDetailsProps) {
   // Persist entire company details state
   const handleSaveAll = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canUpdate) {
+      setError('You do not have permission to modify company details. View only.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
     setError('');
     setMessage('');
+
+    if (!details) return;
 
     if (!details.logo) {
       setError('Logo is mandatory. Please upload an image.');
@@ -355,27 +365,40 @@ export function CompanyDetails({ company, onSave }: CompanyDetailsProps) {
     <div id="company-details-container" className="max-w-7xl mx-auto space-y-6">
       
       {/* Title Header Banner */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-[#e2e8f0] pb-5">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-[#e2e8f0] pb-4 sm:pb-5">
         <div>
-          <h1 className="text-2xl font-extrabold text-[#0f172a] tracking-tight flex items-center gap-2.5">
+          <h1 className="text-xl sm:text-2xl font-extrabold text-[#0f172a] tracking-tight flex items-center gap-2 sm:gap-2.5">
             <div className="p-1.5 bg-blue-100 rounded-lg text-blue-600">
-              <Building2 className="w-6 h-6" />
+              <Building2 className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
             Company Details & Settings
           </h1>
-          <p className="text-sm text-[#64748b] mt-1">
+          <p className="text-xs sm:text-sm text-[#64748b] mt-1">
             Configure trade branding, legal company credentials, bank details, and primary invoicing addresses.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={handleSaveAll}
-          className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-extrabold shadow-sm hover:shadow transition-all flex items-center gap-2 cursor-pointer"
-        >
-          <Save className="w-4 h-4" />
-          Save Changes
-        </button>
+        {canUpdate ? (
+          <button
+            type="button"
+            onClick={handleSaveAll}
+            className="w-full sm:w-auto px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs sm:text-sm font-extrabold shadow-sm hover:shadow transition-all flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <Save className="w-4 h-4" />
+            Save Changes
+          </button>
+        ) : (
+          <div className="w-full sm:w-auto text-center px-4 py-2 bg-slate-100 text-slate-500 rounded-xl text-xs font-bold border border-slate-200">
+            View-Only Access
+          </div>
+        )}
       </div>
+
+      {!canUpdate && (
+        <div className="p-3.5 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl text-sm font-semibold flex items-center shadow-xs">
+          <AlertCircle className="w-5 h-5 mr-2.5 text-amber-600 flex-shrink-0" />
+          You do not have permission to modify company details. The form is presented in view-only mode.
+        </div>
+      )}
 
       {/* Notifications banner */}
       {message && (
@@ -414,7 +437,7 @@ export function CompanyDetails({ company, onSave }: CompanyDetailsProps) {
             <div className="bg-slate-50 p-4 rounded-xl border border-slate-100/60 flex flex-col sm:flex-row items-center gap-4">
               <div className="relative">
                 {details.logo ? (
-                  <div className="w-20 h-20 rounded-2xl bg-white border border-slate-200 p-2 flex items-center justify-center overflow-hidden shadow-xs">
+                  <div className="w-32 h-20 rounded-2xl bg-white border border-slate-200 p-2 flex items-center justify-center overflow-hidden shadow-xs">
                     <img src={details.logo} alt="Company Logo" className="max-w-full max-h-full object-contain" />
                   </div>
                 ) : (
@@ -686,9 +709,9 @@ export function CompanyDetails({ company, onSave }: CompanyDetailsProps) {
         {/* RIGHT COLUMN (lg:col-span-5) - Multiple address manager */}
         <div className="lg:col-span-5 space-y-6">
           
-          <div className="bg-white p-6 rounded-2xl border border-[#e2e8f0] shadow-2xs space-y-5">
+          <div className="bg-white p-4 sm:p-6 rounded-2xl border border-[#e2e8f0] shadow-2xs space-y-5">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-extrabold text-base text-[#0f172a] flex items-center gap-2">
+              <h3 className="font-extrabold text-sm sm:text-base text-[#0f172a] flex items-center gap-2">
                 <span className="w-1.5 h-5 bg-blue-600 rounded-full inline-block"></span>
                 Billing Addresses
               </h3>
@@ -697,15 +720,15 @@ export function CompanyDetails({ company, onSave }: CompanyDetailsProps) {
               </span>
             </div>
 
-            <div className="flex items-center justify-between">
-              <p className="text-xs text-[#64748b] max-w-[70%]">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+              <p className="text-xs text-[#64748b]">
                 Define multiple dispatching locations. The **1st primary address** prints automatically on customer invoices.
               </p>
               {!showAddressForm && (
                 <button
                   type="button"
                   onClick={handleOpenAddAddress}
-                  className="px-3 py-1.5 bg-[#f0fdf4] hover:bg-[#dcfce7] border border-emerald-200 text-emerald-800 text-xs font-extrabold rounded-lg flex items-center gap-1 cursor-pointer transition-colors"
+                  className="self-start sm:self-auto px-3 py-1.5 bg-[#f0fdf4] hover:bg-[#dcfce7] border border-emerald-200 text-emerald-800 text-xs font-extrabold rounded-lg flex items-center gap-1 cursor-pointer transition-colors whitespace-nowrap"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   Add Address
@@ -917,14 +940,16 @@ export function CompanyDetails({ company, onSave }: CompanyDetailsProps) {
             <p className="text-xs text-slate-300">
               Your modifications are cached locally inside the sandbox memory space. Press "Save Changes" to write them permanently and dynamically update all tax documents.
             </p>
-            <button
-              type="button"
-              onClick={handleSaveAll}
-              className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-extrabold transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <Save className="w-4 h-4" />
-              Save Settings Profiles
-            </button>
+            {canUpdate && (
+              <button
+                type="button"
+                onClick={handleSaveAll}
+                className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-extrabold transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Save className="w-4 h-4" />
+                Save Settings Profiles
+              </button>
+            )}
           </div>
 
         </div>

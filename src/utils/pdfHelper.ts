@@ -96,8 +96,8 @@ export async function generateInvoicePdfBase64(invoice: Invoice, company: any, c
   const sellerMobile = company.company_phone || company.phone || '';
   const sellerEmail = company.company_email || '';
 
-  const sellerAddressHtml = (company.addresses || []).slice(0, 2).map((addr: any) => {
-    return `<div style="font-size: 10px; color: #64748b; margin-top: 3px;">${addr.type} : ${addr.line1}, ${addr.city} - ${addr.pincode}</div>`;
+  const sellerAddressHtml = (company.addresses || []).slice(0, 2).map((addr: any, idx: number) => {
+    return `<div style="font-size: 10px; color: #64748b; margin-top: ${idx === 0 ? '3px' : '0px'}; line-height: 1.25;">${addr.type} : ${addr.line1}, ${addr.city} - ${addr.pincode}</div>`;
   }).join('');
 
   const sellerPrimaryState = company?.addresses?.[0]?.state || '';
@@ -168,21 +168,22 @@ export async function generateInvoicePdfBase64(invoice: Invoice, company: any, c
         <!-- Seller Information and Logo -->
         <div class="row border-bottom" style="padding: 12px 16px;">
           <div style="display: flex; align-items: center; width: 100%;">
-            ${company.logo ? `
-              <div style="margin-right: 12px;">
-                <img src="${company.logo}" style="width: 48px; height: 48px; border-radius: 8px; object-fit: contain; border: 1px solid #e2e8f0; padding: 2px;" />
-              </div>
-            ` : `
-              <div class="logo-box">
-                ${logoChar}
-              </div>
-            `}
-            <div style="flex-grow: 1; text-align: center; padding-right: 60px;">
-              <div class="bold" style="font-size: 16px; letter-spacing: -0.2px; color: #0f172a; text-transform: uppercase; line-height: 1.1;">${sellerCompanyName}</div>
+            <div style="width: 150px; display: flex; align-items: center; justify-content: flex-start; flex-shrink: 0;">
+              ${company.logo ? `
+                <img src="${company.logo}" alt="Company Logo" style="max-height: 70px; max-width: 150px; width: auto; height: auto; object-fit: contain; display: block;" />
+              ` : `
+                <div class="logo-box" style="margin-right: 0;">
+                  ${logoChar}
+                </div>
+              `}
+            </div>
+            <div style="flex-grow: 1; text-align: center; padding: 0 10px;">
+              <div style="font-size: 18px; font-weight: 800; letter-spacing: -0.2px; color: #0f172a; text-transform: uppercase; line-height: 1.15;">${sellerCompanyName}</div>
               <div style="font-size: 8px; font-weight: 500; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; line-height: 1.3;">${sellerSubtitle}</div>
               ${sellerAddressHtml}
               <div class="bold" style="font-size: 10px; font-family: 'JetBrains Mono', monospace; color: #1e293b; margin-top: 5px; letter-spacing: 0.5px;">GSTIN : ${sellerGstin}</div>
             </div>
+            <div style="width: 150px; flex-shrink: 0;"></div>
           </div>
         </div>
 
@@ -497,14 +498,13 @@ export async function generateInvoicePdfBase64(invoice: Invoice, company: any, c
         background-color: #0f172a;
         color: #ffffff;
         border-radius: 50%;
-        width: 48px;
-        height: 48px;
+        width: 54px;
+        height: 54px;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 20px;
+        font-size: 22px;
         font-weight: 600;
-        margin-right: 12px;
         font-family: 'JetBrains Mono', monospace;
       }
     </style>

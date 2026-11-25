@@ -1,20 +1,51 @@
 import React, { useState, useEffect } from 'react';
-import { Product } from '../types';
-import { PackagePlus, Search, Trash2, Edit2, CheckCircle, Save, X, Settings2 } from 'lucide-react';
+import { Product, AppUser } from '../types';
+import {
+  PackagePlus,
+  Search,
+  Trash2,
+  Edit2,
+  CheckCircle,
+  Save,
+  X,
+  RotateCcw,
+  Lock,
+} from 'lucide-react';
+import {
+  isUserAdmin,
+  canUserUpdate,
+  canUserDelete,
+  canUserExport,
+} from '../utils/userHelper';
 
 interface ProductsProps {
   products: Product[];
+  deletedProducts?: Product[];
+  currentUser?: AppUser | null;
   onSaveProduct: (product: Product) => void;
   onDeleteProduct: (id: string) => void;
+  onRestoreProduct?: (id: string) => void;
+  onPermanentDeleteProduct?: (id: string) => void;
   initialShowAddForm?: boolean;
 }
 
 export function Products({
   products,
+  deletedProducts = [],
+  currentUser = null,
   onSaveProduct,
   onDeleteProduct,
+  onRestoreProduct,
+  onPermanentDeleteProduct,
   initialShowAddForm = false,
 }: ProductsProps) {
+  // Access control
+  const isAdmin = isUserAdmin(currentUser);
+  const canUpdate = canUserUpdate(currentUser, 'product');
+  const canDelete = canUserDelete(currentUser, 'product');
+  const canExport = canUserExport(currentUser, 'product');
+
+  const [viewDeleted, setViewDeleted] = useState(false);
   const [showAddForm, setShowAddForm] = useState(initialShowAddForm);
   const [searchName, setSearchName] = useState('');
   const [searchHsn, setSearchHsn] = useState('');
@@ -74,11 +105,12 @@ export function Products({
   };
 
   const handleEdit = (p: Product) => {
+    if (!canUpdate) return;
     setEditingId(p.id);
     setName(p.name);
     setHsnCode(p.hsnCode || p.sku || '');
     setDescription(p.description || '');
-    
+
     // Ensure all parameter checkboxes exist
     const defaultParams = {
       OD: false,
@@ -104,6 +136,10 @@ export function Products({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canUpdate) {
+      alert('You do not have permission to register or update products.');
+      return;
+    }
     if (!name.trim()) {
       alert('Please enter a product/service name.');
       return;
@@ -116,39 +152,45 @@ export function Products({
     const savedProduct: Product = {
       id: editingId || 'new-' + Math.random().toString(36).substring(2, 9),
       name: name.trim(),
-      sku: hsnCode.trim().toUpperCase(), // Keep sku mapped to HSN for compatibility
+      sku: hsnCode.trim().toUpperCase(),
       hsnCode: hsnCode.trim().toUpperCase(),
       description: description.trim() || undefined,
       parameters: { ...parameters },
-      price: price > 0 ? price : 1.00, // Safe default to allow invoicing calculations
+      price: price > 0 ? price : 1.0,
       gstRate: gstRate,
       unit: unit,
     };
 
     onSaveProduct(savedProduct);
-    
+
     const isEdit = !!editingId;
     resetForm();
-    
+
     setMessage(isEdit ? 'Product successfully updated!' : 'Product successfully added!');
     setTimeout(() => setMessage(''), 3000);
     setShowAddForm(false);
   };
 
-  const filteredProducts = products.filter((p) => {
+  const activeProductsToFilter = viewDeleted ? deletedProducts : products;
+
+  const filteredProducts = activeProductsToFilter.filter((p) => {
     const nameMatch = !searchName.trim() || p.name.toLowerCase().includes(searchName.trim().toLowerCase());
     const hsnMatch = !searchHsn.trim() || (p.hsnCode || p.sku || '').toLowerCase().includes(searchHsn.trim().toLowerCase());
     return nameMatch && hsnMatch;
   });
 
   const handleExportCSV = () => {
+    if (!canExport) {
+      alert('You do not have permission to export product records.');
+      return;
+    }
     if (filteredProducts.length === 0) {
       alert('No filtered data available to export.');
       return;
     }
 
     const headers = ['Name', 'HSN Code', 'Parameters', 'Price', 'GST Rate', 'Unit', 'Description'];
-    const rows = filteredProducts.map(p => {
+    const rows = filteredProducts.map((p) => {
       const activeParams = p.parameters
         ? Object.entries(p.parameters)
             .filter(([_, active]) => active)
@@ -162,20 +204,20 @@ export function Products({
         p.price,
         p.gstRate,
         p.unit,
-        p.description || ''
+        p.description || '',
       ];
     });
 
     const csvContent = [
       headers.join(','),
-      ...rows.map(row => row.map(val => `"${String(val).replace(/"/g, '""')}"`).join(','))
+      ...rows.map((row) => row.map((val) => `"${String(val).replace(/"/g, '""')}"`).join(',')),
     ].join('\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `billhive_products_export_${Date.now()}.csv`);
+    link.setAttribute('download', `billhive_products_${viewDeleted ? 'deleted_' : ''}export_${Date.now()}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
@@ -190,7 +232,7 @@ export function Products({
           <p className="text-sm text-[#64748b]">Configure standardized goods, services, and structural fabrication parameters.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {!showAddForm && (
+          {!showAddForm && canExport && (
             <button
               onClick={handleExportCSV}
               className="inline-flex items-center justify-center px-4 py-2 text-sm font-semibold rounded-lg text-slate-700 bg-white border border-slate-200 hover:border-slate-300 transition-all cursor-pointer shadow-sm"
@@ -198,29 +240,58 @@ export function Products({
               Export CSV
             </button>
           )}
-          <button
-            id="btn-toggle-product-form"
-            onClick={() => {
-              if (showAddForm) {
-                resetForm();
-                setShowAddForm(false);
-              } else {
-                setShowAddForm(true);
-              }
-            }}
-            className="inline-flex items-center justify-center px-4 py-2 text-sm font-semibold rounded-lg text-white bg-[#3b82f6] hover:bg-[#2563eb] transition-all cursor-pointer shadow-sm"
-          >
-            {showAddForm ? (
-              'View Existing Products'
-            ) : (
-              <>
-                <PackagePlus className="w-4.5 h-4.5 mr-1.5" />
-                Add Product
-              </>
-            )}
-          </button>
+          {canUpdate && !viewDeleted && (
+            <button
+              id="btn-toggle-product-form"
+              onClick={() => {
+                if (showAddForm) {
+                  resetForm();
+                  setShowAddForm(false);
+                } else {
+                  setShowAddForm(true);
+                }
+              }}
+              className="inline-flex items-center justify-center px-4 py-2 text-sm font-semibold rounded-lg text-white bg-[#3b82f6] hover:bg-[#2563eb] transition-all cursor-pointer shadow-sm"
+            >
+              {showAddForm ? (
+                'View Existing Products'
+              ) : (
+                <>
+                  <PackagePlus className="w-4.5 h-4.5 mr-1.5" />
+                  Add Product
+                </>
+              )}
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Admin Tab Switcher: Active vs Deleted */}
+      {isAdmin && !showAddForm && (
+        <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+          <button
+            onClick={() => setViewDeleted(false)}
+            className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
+              !viewDeleted
+                ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            Active Products ({products.length})
+          </button>
+          <button
+            onClick={() => setViewDeleted(true)}
+            className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+              viewDeleted
+                ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <Trash2 className="w-4 h-4 text-rose-500" />
+            Deleted Items ({deletedProducts.length})
+          </button>
+        </div>
+      )}
 
       {message && (
         <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-sm font-semibold flex items-center shadow-sm">
@@ -240,11 +311,10 @@ export function Products({
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            
             {/* SECTION 1: PRODUCT DETAILS */}
             <div className="space-y-4">
               <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Product Details</h4>
-              
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {/* Product Name */}
                 <div className="sm:col-span-2">
@@ -301,7 +371,7 @@ export function Products({
                 <span className="text-sm font-bold text-slate-700">Parameters</span>
                 <span className="text-xs text-[#64748b]">Select the engineering / catalog attributes applicable to this product type.</span>
               </div>
-              
+
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-slate-50 p-4 rounded-xl border border-[#e2e8f0]">
                 {(Object.keys(parameters) as Array<keyof typeof parameters>).map((param) => (
                   <label
@@ -311,10 +381,12 @@ export function Products({
                     <input
                       type="checkbox"
                       checked={parameters[param]}
-                      onChange={(e) => setParameters({
-                        ...parameters,
-                        [param]: e.target.checked
-                      })}
+                      onChange={(e) =>
+                        setParameters({
+                          ...parameters,
+                          [param]: e.target.checked,
+                        })
+                      }
                       className="w-4.5 h-4.5 text-[#3b82f6] border-[#e2e8f0] rounded focus:ring-[#3b82f6]/20 focus:ring-2 cursor-pointer"
                     />
                     <span className="text-xs font-bold text-slate-700">{param}</span>
@@ -395,33 +467,160 @@ export function Products({
               </div>
             </div>
             <div className="text-xs text-[#64748b] font-mono font-medium whitespace-nowrap">
-              Registered items: {filteredProducts.length} line{filteredProducts.length === 1 ? '' : 's'}
+              {viewDeleted ? 'Deleted items' : 'Registered items'}: {filteredProducts.length} line
+              {filteredProducts.length === 1 ? '' : 's'}
             </div>
           </div>
 
-          {/* Table Container */}
-          <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm overflow-hidden">
+          {/* Mobile Products Card List */}
+          <div className="block md:hidden space-y-3">
+            {filteredProducts.length === 0 ? (
+              <div className="bg-white p-8 rounded-xl border border-slate-200 text-center text-slate-400">
+                <p className="text-sm font-semibold">
+                  {viewDeleted ? 'No deleted products found' : 'No products match your search criteria'}
+                </p>
+                <p className="text-xs mt-1">
+                  {viewDeleted
+                    ? 'Products soft-deleted by users will appear here.'
+                    : 'Register new parameters and parts to easily generate documents.'}
+                </p>
+              </div>
+            ) : (
+              filteredProducts.map((p) => {
+                const activeParams = p.parameters
+                  ? Object.entries(p.parameters)
+                      .filter(([_, isActive]) => isActive === true)
+                      .map(([key]) => key)
+                  : [];
+
+                return (
+                  <div key={p.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="font-bold text-slate-900 text-sm">{p.name}</div>
+                        {p.description && (
+                          <div className="text-xs text-slate-500 line-clamp-2 mt-0.5">{p.description}</div>
+                        )}
+                      </div>
+                      <span className="font-mono text-xs font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded flex-shrink-0">
+                        {p.hsnCode || p.sku || '-'}
+                      </span>
+                    </div>
+
+                    {activeParams.length > 0 && (
+                      <div className="flex flex-wrap gap-1 pt-1">
+                        {activeParams.map((param) => (
+                          <span
+                            key={param}
+                            className="text-[10px] font-bold font-mono px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100"
+                          >
+                            {param}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-end gap-1.5 pt-2 border-t border-slate-100">
+                      {viewDeleted ? (
+                        <>
+                          {onRestoreProduct && (
+                            <button
+                              onClick={() => onRestoreProduct(p.id)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 cursor-pointer"
+                              title="Restore product"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              Restore
+                            </button>
+                          )}
+                          {onPermanentDeleteProduct && (
+                            <button
+                              onClick={() => {
+                                if (
+                                  confirm(
+                                    `PERMANENT DELETION WARNING: Are you sure you want to permanently erase ${p.name}? This cannot be undone.`
+                                  )
+                                ) {
+                                  onPermanentDeleteProduct(p.id);
+                                }
+                              }}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded bg-rose-50 text-rose-700 hover:bg-rose-100 cursor-pointer"
+                              title="Permanently erase"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              Delete
+                            </button>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          {canUpdate && (
+                            <button
+                              onClick={() => handleEdit(p)}
+                              className="p-1.5 rounded-lg text-slate-500 hover:text-blue-600 hover:bg-blue-50 cursor-pointer"
+                              title="Edit Product"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                          )}
+                          {canDelete && (
+                            <button
+                              onClick={() => {
+                                if (confirm(`Are you sure you want to delete product ${p.name}?`)) {
+                                  onDeleteProduct(p.id);
+                                }
+                              }}
+                              className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                              title="Delete Product"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Desktop Table Container */}
+          <div className="hidden md:block bg-white rounded-lg border border-[#e2e8f0] shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
               <table id="product-list-table" className="min-w-full divide-y divide-[#e2e8f0] text-left">
                 <thead className="bg-[#f8fafc] text-[#64748b] text-xs font-semibold uppercase tracking-wider">
                   <tr>
-                    <th scope="col" className="px-6 py-4 border-b border-[#e2e8f0]">Name</th>
-                    <th scope="col" className="px-6 py-4 border-b border-[#e2e8f0]">HSN Code</th>
-                    <th scope="col" className="px-6 py-4 border-b border-[#e2e8f0]">Comma separated Parameters</th>
-                    <th scope="col" className="px-6 py-4 border-b border-[#e2e8f0] text-right">Actions</th>
+                    <th scope="col" className="px-6 py-4 border-b border-[#e2e8f0]">
+                      Name
+                    </th>
+                    <th scope="col" className="px-6 py-4 border-b border-[#e2e8f0]">
+                      HSN Code
+                    </th>
+                    <th scope="col" className="px-6 py-4 border-b border-[#e2e8f0]">
+                      Comma separated Parameters
+                    </th>
+                    <th scope="col" className="px-6 py-4 border-b border-[#e2e8f0] text-right">
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#e2e8f0] text-sm text-slate-700">
                   {filteredProducts.length === 0 ? (
                     <tr>
                       <td colSpan={4} className="px-6 py-12 text-center text-slate-400">
-                        <p className="text-base font-semibold text-slate-500">No products match your search criteria</p>
-                        <p className="text-xs mt-1">Register new parameters and parts to easily generate compliant legal documents.</p>
+                        <p className="text-base font-semibold text-slate-500">
+                          {viewDeleted ? 'No deleted products found' : 'No products match your search criteria'}
+                        </p>
+                        <p className="text-xs mt-1">
+                          {viewDeleted
+                            ? 'Products soft-deleted by users will appear here.'
+                            : 'Register new parameters and parts to easily generate compliant legal documents.'}
+                        </p>
                       </td>
                     </tr>
                   ) : (
                     filteredProducts.map((p) => {
-                      // Compute comma separated parameter list
                       const commaSeparatedParams = p.parameters
                         ? Object.entries(p.parameters)
                             .filter(([_, isActive]) => isActive === true)
@@ -442,48 +641,83 @@ export function Products({
                               )}
                             </div>
                           </td>
-                          
+
                           {/* Column 2: HSN Code */}
                           <td className="px-6 py-4 font-mono text-xs text-[#475569] font-semibold border-b border-[#e2e8f0]/60">
                             {p.hsnCode || p.sku || '-'}
                           </td>
-                          
+
                           {/* Column 3: Comma separated Parameters */}
                           <td className="px-6 py-4 border-b border-[#e2e8f0]/60">
                             {commaSeparatedParams ? (
-                              <span className="text-slate-700 font-medium">
-                                {commaSeparatedParams}
-                              </span>
+                              <span className="text-slate-700 font-medium">{commaSeparatedParams}</span>
                             ) : (
-                              <span className="text-slate-400 italic text-xs">
-                                No parameters
-                              </span>
+                              <span className="text-slate-400 italic text-xs">No parameters</span>
                             )}
                           </td>
-                          
-                          {/* Column 4: Actions (Edit, Delete) */}
-                          <td className="px-6 py-4 text-right border-b border-[#e2e8f0]/60 space-x-1.5">
-                            {/* Edit Button */}
-                            <button
-                              onClick={() => handleEdit(p)}
-                              className="inline-flex p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all cursor-pointer"
-                              title="Edit Product"
-                            >
-                              <Edit2 className="w-4 h-4" />
-                            </button>
 
-                            {/* Delete Button */}
-                            <button
-                              onClick={() => {
-                                if (confirm(`Are you sure you want to delete product ${p.name}?`)) {
-                                  onDeleteProduct(p.id);
-                                }
-                              }}
-                              className="inline-flex p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-all cursor-pointer"
-                              title="Delete Product"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                          {/* Column 4: Actions */}
+                          <td className="px-6 py-4 text-right border-b border-[#e2e8f0]/60 space-x-1.5 whitespace-nowrap">
+                            {viewDeleted ? (
+                              // Admin recovery actions
+                              <>
+                                {onRestoreProduct && (
+                                  <button
+                                    onClick={() => onRestoreProduct(p.id)}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 cursor-pointer"
+                                    title="Restore product"
+                                  >
+                                    <RotateCcw className="w-3.5 h-3.5" />
+                                    Restore
+                                  </button>
+                                )}
+                                {onPermanentDeleteProduct && (
+                                  <button
+                                    onClick={() => {
+                                      if (
+                                        confirm(
+                                          `PERMANENT DELETION WARNING: Are you sure you want to permanently erase ${p.name}? This cannot be undone.`
+                                        )
+                                      ) {
+                                        onPermanentDeleteProduct(p.id);
+                                      }
+                                    }}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded bg-rose-50 text-rose-700 hover:bg-rose-100 cursor-pointer"
+                                    title="Permanently erase"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                    Delete Permanently
+                                  </button>
+                                )}
+                              </>
+                            ) : (
+                              // Standard actions with permissions
+                              <>
+                                {canUpdate && (
+                                  <button
+                                    onClick={() => handleEdit(p)}
+                                    className="inline-flex p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all cursor-pointer"
+                                    title="Edit Product"
+                                  >
+                                    <Edit2 className="w-4 h-4" />
+                                  </button>
+                                )}
+
+                                {canDelete && (
+                                  <button
+                                    onClick={() => {
+                                      if (confirm(`Are you sure you want to delete product ${p.name}?`)) {
+                                        onDeleteProduct(p.id);
+                                      }
+                                    }}
+                                    className="inline-flex p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-all cursor-pointer"
+                                    title="Delete Product"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </>
+                            )}
                           </td>
                         </tr>
                       );

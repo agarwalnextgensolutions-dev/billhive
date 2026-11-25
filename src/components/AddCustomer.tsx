@@ -1,12 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { Customer, SPOCDetails, CustomerAddress } from '../types';
-import { User, Building, Landmark, Save, RotateCcw, AlertCircle, Plus, Trash2, MapPin } from 'lucide-react';
+import { Customer, SPOCDetails, CustomerAddress, AppUser } from '../types';
+import { User, Building, Landmark, Save, RotateCcw, AlertCircle, Plus, Trash2, MapPin, Lock } from 'lucide-react';
 import { supabase } from '../utils/supabaseClient';
+import {
+  canUserUpdateCustomerContact,
+  canUserUpdateCustomerBank,
+  canUserViewCustomerContact,
+  canUserViewCustomerBank,
+} from '../utils/userHelper';
 
 interface AddCustomerProps {
   onSaveCustomer: (customer: Customer) => void;
   onCancel: () => void;
   editingCustomer?: Customer | null;
+  currentUser?: AppUser | null;
 }
 
 interface StateInfo {
@@ -168,7 +175,13 @@ const resolveStateFromGstin = (gst: string) => {
   return null;
 };
 
-export function AddCustomer({ onSaveCustomer, onCancel, editingCustomer }: AddCustomerProps) {
+export function AddCustomer({ onSaveCustomer, onCancel, editingCustomer, currentUser }: AddCustomerProps) {
+  // Access control
+  const canViewBank = canUserViewCustomerBank(currentUser);
+  const canEditBank = canUserUpdateCustomerBank(currentUser);
+  const canViewContact = canUserViewCustomerContact(currentUser);
+  const canEditContact = canUserUpdateCustomerContact(currentUser);
+
   // Form state
   const [companyName, setCompanyName] = useState('');
   const [addresses, setAddresses] = useState<CustomerAddress[]>([
@@ -412,28 +425,49 @@ export function AddCustomer({ onSaveCustomer, onCancel, editingCustomer }: AddCu
     const legacyState = firstAddr.state;
     const legacyGstin = firstAddr.gstin.toUpperCase();
 
+    const finalBankDetails = canEditBank
+      ? {
+          bankName: bankName.trim(),
+          accountNumber: accountNumber.trim(),
+          branch: branch.trim(),
+          ifscCode: ifscCode.trim().toUpperCase(),
+        }
+      : (editingCustomer?.bankDetails || {
+          bankName: '',
+          accountNumber: '',
+          branch: '',
+          ifscCode: '',
+        });
+
+    const finalSpocDetails = canEditContact
+      ? {
+          name: pocs[0]?.name.trim() || 'N/A',
+          email: pocs[0]?.email.trim() || 'N/A',
+          mobileNumber: pocs[0]?.mobileNumber.trim() || 'N/A',
+        }
+      : (editingCustomer?.spocDetails || {
+          name: 'N/A',
+          email: 'N/A',
+          mobileNumber: 'N/A',
+        });
+
+    const finalPocs = canEditContact
+      ? pocs.map(p => ({
+          name: p.name.trim(),
+          email: p.email.trim(),
+          mobileNumber: p.mobileNumber.trim()
+        }))
+      : (editingCustomer?.pocs || []);
+
     const customerData: Customer = {
       id: editingCustomer ? editingCustomer.id : 'new-' + Math.random().toString(36).substring(2, 9),
       companyName: companyName.trim(),
       address: legacyAddress,
       state: legacyState,
       gstin: legacyGstin,
-      bankDetails: {
-        bankName: bankName.trim(),
-        accountNumber: accountNumber.trim(),
-        branch: branch.trim(),
-        ifscCode: ifscCode.trim().toUpperCase(),
-      },
-      spocDetails: {
-        name: pocs[0]?.name.trim() || 'N/A',
-        email: pocs[0]?.email.trim() || 'N/A',
-        mobileNumber: pocs[0]?.mobileNumber.trim() || 'N/A',
-      },
-      pocs: pocs.map(p => ({
-        name: p.name.trim(),
-        email: p.email.trim(),
-        mobileNumber: p.mobileNumber.trim()
-      })),
+      bankDetails: finalBankDetails,
+      spocDetails: finalSpocDetails,
+      pocs: finalPocs,
       addresses: addresses.map((addr, idx) => ({
         type: addr.type,
         gstin: addr.gstin.trim().toUpperCase(),
@@ -466,16 +500,16 @@ export function AddCustomer({ onSaveCustomer, onCancel, editingCustomer }: AddCu
 
   return (
     <div id="add-customer-container" className="max-w-4xl mx-auto space-y-6">
-      <div className="flex items-center justify-between border-b border-[#e2e8f0] pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-[#e2e8f0] pb-4">
         <div>
-          <h1 className="text-2xl font-bold text-[#0f172a] tracking-tight">
+          <h1 className="text-xl sm:text-2xl font-bold text-[#0f172a] tracking-tight">
             {editingCustomer ? 'Edit Customer' : 'Add New Customer'}
           </h1>
-          <p className="text-sm text-[#64748b]">Provide company, multiple addresses with GSTIN/Pincode lookup, banking, and point-of-contact details.</p>
+          <p className="text-xs sm:text-sm text-[#64748b]">Provide company, multiple addresses with GSTIN/Pincode lookup, banking, and point-of-contact details.</p>
         </div>
         <button
           onClick={onCancel}
-          className="text-sm font-semibold text-[#3b82f6] hover:text-[#2563eb] transition-colors cursor-pointer"
+          className="text-xs sm:text-sm font-semibold text-[#3b82f6] hover:text-[#2563eb] transition-colors cursor-pointer self-start sm:self-auto"
         >
           Cancel & Return
         </button>
@@ -678,68 +712,87 @@ export function AddCustomer({ onSaveCustomer, onCancel, editingCustomer }: AddCu
             <h3 className="font-bold text-base">Bank Details (Optional)</h3>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {/* Bank Name */}
-            <div>
-              <label htmlFor="bankName" className="block text-sm font-semibold text-slate-700">
-                Bank Name
-              </label>
-              <input
-                id="bankName"
-                type="text"
-                placeholder="HDFC Bank, ICICI Bank, SBI etc."
-                value={bankName}
-                onChange={(e) => setBankName(e.target.value)}
-                className="mt-2 block w-full px-4 py-3 border border-[#e2e8f0] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3b82f6]/20 focus:border-[#3b82f6] text-sm"
-              />
+          {!canViewBank ? (
+            <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg text-slate-500 text-xs flex items-center gap-2">
+              <Lock className="w-4 h-4 text-slate-400 flex-shrink-0" />
+              <span>You do not have permission to view or manage banking details. Existing bank details will be preserved.</span>
             </div>
+          ) : (
+            <>
+              {!canEditBank && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 text-xs flex items-center gap-2">
+                  <Lock className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                  <span>You have view-only access to banking details. Inputs are read-only.</span>
+                </div>
+              )}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                {/* Bank Name */}
+                <div>
+                  <label htmlFor="bankName" className="block text-sm font-semibold text-slate-700">
+                    Bank Name
+                  </label>
+                  <input
+                    id="bankName"
+                    type="text"
+                    disabled={!canEditBank}
+                    placeholder="HDFC Bank, ICICI Bank, SBI etc."
+                    value={bankName}
+                    onChange={(e) => setBankName(e.target.value)}
+                    className="mt-2 block w-full px-4 py-3 border border-[#e2e8f0] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3b82f6]/20 focus:border-[#3b82f6] text-sm disabled:bg-slate-100 disabled:cursor-not-allowed"
+                  />
+                </div>
 
-            {/* Account Number */}
-            <div>
-              <label htmlFor="accountNumber" className="block text-sm font-semibold text-slate-700">
-                Account Number
-              </label>
-              <input
-                id="accountNumber"
-                type="text"
-                placeholder="Enter bank account number"
-                value={accountNumber}
-                onChange={(e) => setAccountNumber(e.target.value.replace(/\D/g, ''))}
-                className="mt-2 block w-full px-4 py-3 border border-[#e2e8f0] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3b82f6]/20 focus:border-[#3b82f6] text-sm font-mono"
-              />
-            </div>
+                {/* Account Number */}
+                <div>
+                  <label htmlFor="accountNumber" className="block text-sm font-semibold text-slate-700">
+                    Account Number
+                  </label>
+                  <input
+                    id="accountNumber"
+                    type="text"
+                    disabled={!canEditBank}
+                    placeholder="Enter bank account number"
+                    value={accountNumber}
+                    onChange={(e) => setAccountNumber(e.target.value.replace(/\D/g, ''))}
+                    className="mt-2 block w-full px-4 py-3 border border-[#e2e8f0] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3b82f6]/20 focus:border-[#3b82f6] text-sm font-mono disabled:bg-slate-100 disabled:cursor-not-allowed"
+                  />
+                </div>
 
-            {/* Branch */}
-            <div>
-              <label htmlFor="branch" className="block text-sm font-semibold text-slate-700">
-                Branch
-              </label>
-              <input
-                id="branch"
-                type="text"
-                placeholder="Enter branch name"
-                value={branch}
-                onChange={(e) => setBranch(e.target.value)}
-                className="mt-2 block w-full px-4 py-3 border border-[#e2e8f0] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3b82f6]/20 focus:border-[#3b82f6] text-sm"
-              />
-            </div>
+                {/* Branch */}
+                <div>
+                  <label htmlFor="branch" className="block text-sm font-semibold text-slate-700">
+                    Branch
+                  </label>
+                  <input
+                    id="branch"
+                    type="text"
+                    disabled={!canEditBank}
+                    placeholder="Enter branch name"
+                    value={branch}
+                    onChange={(e) => setBranch(e.target.value)}
+                    className="mt-2 block w-full px-4 py-3 border border-[#e2e8f0] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3b82f6]/20 focus:border-[#3b82f6] text-sm disabled:bg-slate-100 disabled:cursor-not-allowed"
+                  />
+                </div>
 
-            {/* IFSC Code */}
-            <div>
-              <label htmlFor="ifscCode" className="block text-sm font-semibold text-slate-700">
-                IFSC Code
-              </label>
-              <input
-                id="ifscCode"
-                type="text"
-                placeholder="e.g. HDFC0001201"
-                maxLength={11}
-                value={ifscCode}
-                onChange={(e) => setIfscCode(e.target.value.toUpperCase())}
-                className="mt-2 block w-full px-4 py-3 border border-[#e2e8f0] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3b82f6]/20 focus:border-[#3b82f6] text-sm font-mono"
-              />
-            </div>
-          </div>
+                {/* IFSC Code */}
+                <div>
+                  <label htmlFor="ifscCode" className="block text-sm font-semibold text-slate-700">
+                    IFSC Code
+                  </label>
+                  <input
+                    id="ifscCode"
+                    type="text"
+                    disabled={!canEditBank}
+                    placeholder="e.g. HDFC0001201"
+                    maxLength={11}
+                    value={ifscCode}
+                    onChange={(e) => setIfscCode(e.target.value.toUpperCase())}
+                    className="mt-2 block w-full px-4 py-3 border border-[#e2e8f0] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3b82f6]/20 focus:border-[#3b82f6] text-sm font-mono disabled:bg-slate-100 disabled:cursor-not-allowed"
+                  />
+                </div>
+              </div>
+            </>
+          )}
         </div>
 
         {/* SECTION 3: SPOC DETAILS */}
@@ -749,92 +802,112 @@ export function AddCustomer({ onSaveCustomer, onCancel, editingCustomer }: AddCu
               <User className="w-5 h-5 text-[#3b82f6]" />
               <h3 className="font-bold text-base">Points of Contact (POC)</h3>
             </div>
-            <button
-              type="button"
-              onClick={handleAddPoc}
-              disabled={pocs.length >= 5}
-              className="px-3 py-1.5 bg-[#3b82f6] hover:bg-[#2563eb] text-white rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Add POC ({pocs.length}/5)
-            </button>
+            {canEditContact && (
+              <button
+                type="button"
+                onClick={handleAddPoc}
+                disabled={pocs.length >= 5}
+                className="px-3 py-1.5 bg-[#3b82f6] hover:bg-[#2563eb] text-white rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add POC ({pocs.length}/5)
+              </button>
+            )}
           </div>
 
-          <div className="space-y-6">
-            {pocs.map((poc, idx) => (
-              <div key={idx} className="p-4 bg-slate-50/50 rounded-lg border border-[#e2e8f0] space-y-4">
-                <div className="flex items-center justify-between border-b border-[#e2e8f0] pb-2">
-                  <span className="text-xs font-bold text-slate-700 tracking-wider uppercase">
-                    POC #{idx + 1} {idx === 0 ? '(Primary SPOC)' : ''}
-                  </span>
-                  {pocs.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => handleRemovePoc(idx)}
-                      className="text-rose-600 hover:text-rose-800 p-1.5 rounded hover:bg-rose-50 transition-colors cursor-pointer"
-                      title="Remove Point of Contact"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
+          {!canViewContact ? (
+            <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg text-slate-500 text-xs flex items-center gap-2">
+              <Lock className="w-4 h-4 text-slate-400 flex-shrink-0" />
+              <span>You do not have permission to view or manage contact details. Existing contacts will be preserved.</span>
+            </div>
+          ) : (
+            <>
+              {!canEditContact && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 text-xs flex items-center gap-2">
+                  <Lock className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                  <span>You have view-only access to contact details. Inputs are read-only.</span>
                 </div>
+              )}
+              <div className="space-y-6">
+                {pocs.map((poc, idx) => (
+                  <div key={idx} className="p-4 bg-slate-50/50 rounded-lg border border-[#e2e8f0] space-y-4">
+                    <div className="flex items-center justify-between border-b border-[#e2e8f0] pb-2">
+                      <span className="text-xs font-bold text-slate-700 tracking-wider uppercase">
+                        POC #{idx + 1} {idx === 0 ? '(Primary SPOC)' : ''}
+                      </span>
+                      {canEditContact && pocs.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemovePoc(idx)}
+                          className="text-rose-600 hover:text-rose-800 p-1.5 rounded hover:bg-rose-50 transition-colors cursor-pointer"
+                          title="Remove Point of Contact"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                  {/* POC Name */}
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700">
-                      Contact Person Name
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Mayank P H"
-                      value={poc.name}
-                      onChange={(e) => handlePocChange(idx, 'name', e.target.value)}
-                      className="mt-2 block w-full px-4 py-2.5 border border-[#e2e8f0] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3b82f6]/20 focus:border-[#3b82f6] text-sm"
-                    />
-                  </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                      {/* POC Name */}
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700">
+                          Contact Person Name
+                        </label>
+                        <input
+                          type="text"
+                          disabled={!canEditContact}
+                          placeholder="e.g. Mayank P H"
+                          value={poc.name}
+                          onChange={(e) => handlePocChange(idx, 'name', e.target.value)}
+                          className="mt-2 block w-full px-4 py-2.5 border border-[#e2e8f0] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3b82f6]/20 focus:border-[#3b82f6] text-sm disabled:bg-slate-100 disabled:cursor-not-allowed"
+                        />
+                      </div>
 
-                  {/* POC Email */}
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700">
-                      Contact Email
-                    </label>
-                    <input
-                      type="email"
-                      placeholder="e.g. mayank@abc.com"
-                      value={poc.email}
-                      onChange={(e) => handlePocChange(idx, 'email', e.target.value)}
-                      className="mt-2 block w-full px-4 py-2.5 border border-[#e2e8f0] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3b82f6]/20 focus:border-[#3b82f6] text-sm"
-                    />
-                  </div>
+                      {/* POC Email */}
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700">
+                          Contact Email
+                        </label>
+                        <input
+                          type="email"
+                          disabled={!canEditContact}
+                          placeholder="e.g. mayank@abc.com"
+                          value={poc.email}
+                          onChange={(e) => handlePocChange(idx, 'email', e.target.value)}
+                          className="mt-2 block w-full px-4 py-2.5 border border-[#e2e8f0] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3b82f6]/20 focus:border-[#3b82f6] text-sm disabled:bg-slate-100 disabled:cursor-not-allowed"
+                        />
+                      </div>
 
-                  {/* POC Mobile */}
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700">
-                      Contact Mobile Number
-                    </label>
-                    <input
-                      type="tel"
-                      maxLength={10}
-                      placeholder="e.g. 9876543210"
-                      value={poc.mobileNumber}
-                      onChange={(e) => handlePocChange(idx, 'mobileNumber', e.target.value.replace(/\D/g, ''))}
-                      className="mt-2 block w-full px-4 py-2.5 border border-[#e2e8f0] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3b82f6]/20 focus:border-[#3b82f6] text-sm font-mono"
-                    />
+                      {/* POC Mobile */}
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700">
+                          Contact Mobile Number
+                        </label>
+                        <input
+                          type="tel"
+                          disabled={!canEditContact}
+                          maxLength={10}
+                          placeholder="e.g. 9876543210"
+                          value={poc.mobileNumber}
+                          onChange={(e) => handlePocChange(idx, 'mobileNumber', e.target.value.replace(/\D/g, ''))}
+                          className="mt-2 block w-full px-4 py-2.5 border border-[#e2e8f0] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3b82f6]/20 focus:border-[#3b82f6] text-sm font-mono disabled:bg-slate-100 disabled:cursor-not-allowed"
+                        />
+                      </div>
+                    </div>
                   </div>
-                </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </>
+          )}
         </div>
 
         {/* ACTIONS PANEL */}
-        <div className="flex items-center justify-end space-x-3 pt-2">
+        <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-3 pt-2">
           <button
             type="button"
             id="btn-customer-reset"
             onClick={handleReset}
-            className="px-5 py-3 border border-[#e2e8f0] bg-white hover:bg-slate-50 text-[#64748b] font-semibold text-sm rounded-lg flex items-center shadow-sm cursor-pointer"
+            className="w-full sm:w-auto px-5 py-3 border border-[#e2e8f0] bg-white hover:bg-slate-50 text-[#64748b] font-semibold text-sm rounded-lg flex items-center justify-center shadow-sm cursor-pointer"
           >
             <RotateCcw className="w-4 h-4 mr-1.5" />
             Reset Fields
@@ -842,7 +915,7 @@ export function AddCustomer({ onSaveCustomer, onCancel, editingCustomer }: AddCu
           <button
             type="submit"
             id="btn-customer-save"
-            className="px-6 py-3 bg-[#3b82f6] hover:bg-[#2563eb] text-white font-semibold text-sm rounded-lg flex items-center shadow-sm cursor-pointer"
+            className="w-full sm:w-auto px-6 py-3 bg-[#3b82f6] hover:bg-[#2563eb] text-white font-semibold text-sm rounded-lg flex items-center justify-center shadow-sm cursor-pointer"
           >
             <Save className="w-4 h-4 mr-1.5" />
             {editingCustomer ? 'Update Customer Record' : 'Save Customer Record'}
